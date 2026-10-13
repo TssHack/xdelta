@@ -26,6 +26,8 @@ pub fn parse_node_uri(uri_str: &str) -> Result<Node, String> {
         parse_vmess_uri(trimmed)
     } else if trimmed.starts_with("trojan://") {
         parse_trojan_uri(trimmed)
+    } else if trimmed.starts_with("ss://") {
+        crate::parser::shadowsocks::parse_shadowsocks_uri(trimmed)
     } else {
         Err(format!("Unsupported protocol in URI: {}", trimmed))
     }

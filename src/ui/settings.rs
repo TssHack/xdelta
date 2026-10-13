@@ -18,6 +18,20 @@ pub struct SettingsView {
     pub http_port_entry: Entry,
     pub theme_row: ComboRow,
     pub auto_proxy_switch: Switch,
+    /// Selects how traffic is captured: System Proxy or TUN.
+    pub connection_mode_row: ComboRow,
+    /// TUN device parameters.
+    pub tun_stack_row: ComboRow,
+    pub tun_mtu_entry: Entry,
+    pub tun_dns_entry: Entry,
+    pub tun_auto_route_switch: Switch,
+    pub tun_strict_route_switch: Switch,
+    /// Runs the one-time capability setup for TUN.
+    pub tun_setup_button: Button,
+    /// Shows whether TUN is usable right now.
+    pub tun_status_label: Label,
+    /// Selects how traffic is routed: Rule, Global or Direct.
+    pub routing_strategy_row: ComboRow,
     /// Invoked with the new wallpaper id when the user picks one; `None`
     /// disables the background. Set by `connect_wallpaper_changed`.
     wallpaper_callback: WallpaperCallback,
@@ -98,6 +112,130 @@ impl SettingsView {
             .build();
         http_row.add_prefix(&gtk4::Image::from_icon_name("web-browser-symbolic"));
         http_row.add_suffix(&http_port_entry);
+
+        // 2b. Capture Mode & TUN
+        let tunnel_group = PreferencesGroup::builder()
+            .title("Tunnel Mode")
+            .description("How traffic is captured. TUN routes the whole system, proxy mode only cooperating apps")
+            .build();
+
+        let mode_model = gtk4::StringList::new(&["System Proxy (userspace)", "TUN (whole system)"]);
+        let connection_mode_row = ComboRow::builder()
+            .title("Capture Mode")
+            .subtitle("TUN requires a one-time permission grant")
+            .model(&mode_model)
+            .selected(0)
+            .build();
+        connection_mode_row.add_prefix(&gtk4::Image::from_icon_name("network-vpn-symbolic"));
+
+        let tun_stack_model =
+            gtk4::StringList::new(&["System (kernel)", "gVisor (userspace)", "Mixed"]);
+        let tun_stack_row = ComboRow::builder()
+            .title("TUN Stack")
+            .model(&tun_stack_model)
+            .selected(0)
+            .build();
+        tun_stack_row.add_prefix(&gtk4::Image::from_icon_name("network-wired-symbolic"));
+
+        let tun_mtu_entry = Entry::builder()
+            .text("1500")
+            .max_width_chars(6)
+            .valign(Align::Center)
+            .build();
+        let mtu_row = ActionRow::builder()
+            .title("MTU")
+            .subtitle("Interface packet size (576-9000)")
+            .activatable_widget(&tun_mtu_entry)
+            .build();
+        mtu_row.add_suffix(&tun_mtu_entry);
+
+        let tun_dns_entry = Entry::builder()
+            .text("1.1.1.1, 8.8.8.8")
+            .hexpand(true)
+            .valign(Align::Center)
+            .build();
+        let dns_row = ActionRow::builder()
+            .title("Tunnel DNS")
+            .subtitle("Resolvers used inside the tunnel")
+            .activatable_widget(&tun_dns_entry)
+            .build();
+        dns_row.add_suffix(&tun_dns_entry);
+
+        let tun_auto_route_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let auto_route_row = ActionRow::builder()
+            .title("Install Default Routes")
+            .subtitle("Let the core route system traffic through the tunnel")
+            .activatable_widget(&tun_auto_route_switch)
+            .build();
+        auto_route_row.add_suffix(&tun_auto_route_switch);
+
+        let tun_strict_route_switch = Switch::builder()
+            .active(false)
+            .valign(Align::Center)
+            .build();
+        let strict_route_row = ActionRow::builder()
+            .title("Strict Route (leak guard)")
+            .subtitle("Refuse to fall back to a direct connection")
+            .activatable_widget(&tun_strict_route_switch)
+            .build();
+        strict_route_row.add_suffix(&tun_strict_route_switch);
+
+        let tun_status_label = Label::builder()
+            .label("Checking...")
+            .halign(Align::Start)
+            .wrap(true)
+            .build();
+        tun_status_label.add_css_class("caption");
+
+        let tun_setup_button = Button::builder()
+            .label("Grant Permission")
+            .valign(Align::Center)
+            .build();
+        tun_setup_button.add_css_class("suggested-action");
+
+        let tun_status_row = ActionRow::builder()
+            .title("TUN Permission")
+            .subtitle("One-time setup so the core can create the tunnel device")
+            .build();
+        tun_status_row.add_prefix(&gtk4::Image::from_icon_name("security-high-symbolic"));
+        tun_status_row.add_suffix(&tun_setup_button);
+
+        // Read-only status text. This row is deliberately NOT activatable: a
+        // `Label` cannot be activated, and pointing `activatable_widget` at a
+        // child of the row creates a cycle (row activate -> mnemonic_activate
+        // on the label -> propagates back to the row) that recurses until the
+        // stack overflows.
+        let tun_status_box = ActionRow::builder().title("Status").build();
+        tun_status_box.add_suffix(&tun_status_label);
+
+        tunnel_group.add(&connection_mode_row);
+        tunnel_group.add(&tun_stack_row);
+        tunnel_group.add(&mtu_row);
+        tunnel_group.add(&dns_row);
+        tunnel_group.add(&auto_route_row);
+        tunnel_group.add(&strict_route_row);
+        tunnel_group.add(&tun_status_row);
+        tunnel_group.add(&tun_status_box);
+
+        // 2c. Routing strategy
+        let routing_group = PreferencesGroup::builder()
+            .title("Routing")
+            .description("How destinations are classified before forwarding")
+            .build();
+
+        let strategy_model = gtk4::StringList::new(&[
+            "Rule (bypass domestic & private)",
+            "Global (proxy everything)",
+            "Direct (proxy nothing)",
+        ]);
+        let routing_strategy_row = ComboRow::builder()
+            .title("Strategy")
+            .model(&strategy_model)
+            .selected(0)
+            .build();
+        routing_strategy_row.add_prefix(&gtk4::Image::from_icon_name("xdelta-routing-symbolic"));
+
+        routing_group.add(&routing_strategy_row);
 
         ports_group.add(&socks_row);
         ports_group.add(&http_row);
@@ -489,6 +627,8 @@ impl SettingsView {
 
         content_box.append(&core_group);
         content_box.append(&ports_group);
+        content_box.append(&tunnel_group);
+        content_box.append(&routing_group);
         content_box.append(&sys_group);
         content_box.append(&theme_group);
         content_box.append(&update_group);
@@ -513,8 +653,80 @@ impl SettingsView {
             http_port_entry,
             theme_row,
             auto_proxy_switch,
+            connection_mode_row,
+            tun_stack_row,
+            tun_mtu_entry,
+            tun_dns_entry,
+            tun_auto_route_switch,
+            tun_strict_route_switch,
+            tun_setup_button,
+            tun_status_label,
+            routing_strategy_row,
             wallpaper_callback,
         }
+    }
+
+    /// Selected capture mode.
+    pub fn connection_mode(&self) -> crate::core::ConnectionMode {
+        match self.connection_mode_row.selected() {
+            1 => crate::core::ConnectionMode::Tun,
+            _ => crate::core::ConnectionMode::SystemProxy,
+        }
+    }
+
+    /// Applies the listener ports, falling back to the defaults when the field
+    /// is empty or unparseable, so a stray keystroke cannot produce a port of 0.
+    pub fn apply_ports_to(&self, profile: &mut crate::core::ConnectionProfile) {
+        let parse = |text: String, fallback: u16| text.trim().parse::<u16>().unwrap_or(fallback);
+
+        profile.socks_port = parse(
+            self.socks_port_entry.text().to_string(),
+            crate::core::session::DEFAULT_SOCKS_PORT,
+        );
+        profile.http_port = parse(
+            self.http_port_entry.text().to_string(),
+            crate::core::session::DEFAULT_HTTP_PORT,
+        );
+    }
+
+    /// Applies the TUN parameters from the form.
+    pub fn apply_tun_to(&self, profile: &mut crate::core::ConnectionProfile) {
+        let mtu = self
+            .tun_mtu_entry
+            .text()
+            .to_string()
+            .trim()
+            .parse::<u16>()
+            .unwrap_or(1500);
+
+        profile.tun = crate::core::TunOptions {
+            stack: crate::core::TunStack::from_index(self.tun_stack_row.selected()),
+            mtu,
+            auto_route: self.tun_auto_route_switch.is_active(),
+            strict_route: self.tun_strict_route_switch.is_active(),
+            dns_servers: crate::core::TunOptions::parse_dns(self.tun_dns_entry.text().as_ref()),
+        };
+
+        profile.routing.strategy =
+            crate::core::RoutingStrategy::from_index(self.routing_strategy_row.selected());
+    }
+
+    /// Updates the TUN status line and the setup button's enabled state.
+    pub fn render_tun_status(&self, readiness: &crate::net::TunReadiness) {
+        self.tun_status_label.set_label(&readiness.message());
+        self.tun_status_label.remove_css_class("latency-good");
+        self.tun_status_label.remove_css_class("latency-poor");
+        self.tun_status_label
+            .add_css_class(if readiness.is_ready() {
+                "latency-good"
+            } else {
+                "latency-poor"
+            });
+
+        self.tun_setup_button
+            .set_visible(readiness.is_fixable_by_setup());
+        self.tun_setup_button
+            .set_sensitive(readiness.is_fixable_by_setup());
     }
 
     /// Registers the handler that applies a wallpaper selection.

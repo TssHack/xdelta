@@ -19,7 +19,18 @@ pub struct ServersView {
     pub nodes: Rc<RefCell<Vec<Node>>>,
     pub selected_node_id: Rc<RefCell<Option<String>>>,
     pub current_filter: Rc<RefCell<Option<Protocol>>>,
+    /// Listeners notified after the node list is replaced.
+    ///
+    /// The dashboard keeps its own server picker, and it has to be rebuilt when
+    /// the list changes; without this the two views would show different lists.
+    nodes_changed: NodeChangeListeners,
 }
+
+/// Boxed listeners invoked with the new node list.
+///
+/// A type alias keeps the field readable: the inline form spells out four
+/// nesting levels for what is conceptually "a list of callbacks".
+type NodeChangeListeners = Rc<RefCell<Vec<std::boxed::Box<dyn Fn(&[Node])>>>>;
 
 impl ServersView {
     pub fn new() -> Self {
@@ -124,6 +135,7 @@ impl ServersView {
             nodes,
             selected_node_id,
             current_filter,
+            nodes_changed: Rc::new(RefCell::new(Vec::new())),
         };
 
         view.setup_ping_all_handler();
@@ -136,6 +148,18 @@ impl ServersView {
         }
         *self.nodes.borrow_mut() = nodes.clone();
         self.render_nodes(&nodes);
+
+        // Let the dashboard mirror the new list.
+        for listener in self.nodes_changed.borrow().iter() {
+            listener(&nodes);
+        }
+    }
+
+    /// Registers a listener that fires whenever the node list is replaced.
+    pub fn connect_nodes_changed<F: Fn(&[Node]) + 'static>(&self, f: F) {
+        self.nodes_changed
+            .borrow_mut()
+            .push(std::boxed::Box::new(f));
     }
 
     pub fn render_nodes(&self, nodes: &[Node]) {

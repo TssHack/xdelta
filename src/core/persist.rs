@@ -26,6 +26,118 @@ fn default_wallpaper() -> Option<String> {
     Some(crate::ui::wallpaper::DEFAULT_ID.to_string())
 }
 
+/// Connection preferences, persisted alongside the appearance.
+///
+/// Stored as plain numbers and strings rather than a serialized connection
+/// profile: a profile embeds a node, and writing node credentials to disk is a
+/// decision the user has not made. Ports and tunnel parameters are safe to
+/// remember; the node itself is resolved from the subscription at connect time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConnectionSettings {
+    pub socks_port: u16,
+    pub http_port: u16,
+    pub api_port: u16,
+    /// `"system_proxy"` or `"tun"`.
+    pub mode: String,
+    /// `"system"`, `"gvisor"` or `"mixed"`.
+    pub tun_stack: String,
+    pub tun_mtu: u16,
+    pub tun_auto_route: bool,
+    pub tun_strict_route: bool,
+    pub tun_dns: Vec<String>,
+    /// `"rule"`, `"global"` or `"direct"`.
+    pub routing_strategy: String,
+    pub bypass_lan: bool,
+    pub bypass_iran: bool,
+    pub block_ads: bool,
+    pub direct_domains: Vec<String>,
+    /// Whether the desktop proxy is configured automatically on connect.
+    pub auto_system_proxy: bool,
+}
+
+impl Default for ConnectionSettings {
+    fn default() -> Self {
+        Self {
+            socks_port: crate::core::session::DEFAULT_SOCKS_PORT,
+            http_port: crate::core::session::DEFAULT_HTTP_PORT,
+            api_port: crate::core::session::DEFAULT_API_PORT,
+            mode: "system_proxy".to_string(),
+            tun_stack: "system".to_string(),
+            tun_mtu: 1500,
+            tun_auto_route: true,
+            tun_strict_route: false,
+            tun_dns: vec!["1.1.1.1".to_string(), "8.8.8.8".to_string()],
+            routing_strategy: "rule".to_string(),
+            bypass_lan: true,
+            bypass_iran: true,
+            block_ads: true,
+            direct_domains: Vec::new(),
+            auto_system_proxy: true,
+        }
+    }
+}
+
+impl ConnectionSettings {
+    /// Reads the file and returns both sections.
+    ///
+    /// A missing or unreadable file yields defaults; a partially written one
+    /// falls back field by field through serde's own defaults, so a bad file
+    /// never blocks startup.
+    pub fn load() -> (AppearanceSettings, ConnectionSettings) {
+        let Some(path) = settings_path() else {
+            return (AppearanceSettings::default(), ConnectionSettings::default());
+        };
+
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            return (AppearanceSettings::default(), ConnectionSettings::default());
+        };
+
+        #[derive(Deserialize)]
+        struct Document {
+            #[serde(flatten)]
+            appearance: AppearanceSettings,
+            #[serde(default)]
+            connection: ConnectionSettings,
+        }
+
+        match serde_json::from_str::<Document>(&raw) {
+            Ok(doc) => (doc.appearance, doc.connection),
+            Err(e) => {
+                log::warn!("Ignoring malformed settings file {:?}: {}", path, e);
+                (AppearanceSettings::default(), ConnectionSettings::default())
+            }
+        }
+    }
+
+    /// Persists both sections in one write, so the file can never end up with
+    /// one section updated and the other stale.
+    pub fn save(appearance: &AppearanceSettings, connection: &ConnectionSettings) {
+        let Some(path) = settings_path() else {
+            return;
+        };
+
+        #[derive(Serialize)]
+        struct Document<'a> {
+            #[serde(flatten)]
+            appearance: &'a AppearanceSettings,
+            connection: &'a ConnectionSettings,
+        }
+
+        match serde_json::to_string_pretty(&Document {
+            appearance,
+            connection,
+        }) {
+            Ok(json) => {
+                log::debug!("PERSIST-WRITE -> {:?}", path);
+                if let Err(e) = std::fs::write(&path, json) {
+                    log::warn!("Could not write settings to {:?}: {}", path, e);
+                }
+            }
+            Err(e) => log::warn!("Could not serialize settings: {}", e),
+        }
+    }
+}
+
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
@@ -81,43 +193,133 @@ pub fn settings_path() -> Option<PathBuf> {
 
 /// Reads the stored appearance settings, falling back to defaults.
 pub fn load_appearance() -> AppearanceSettings {
-    let Some(path) = settings_path() else {
-        return AppearanceSettings::default();
-    };
-
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return AppearanceSettings::default();
-    };
-
-    match serde_json::from_str::<AppearanceSettings>(&raw) {
-        Ok(settings) => settings,
-        Err(e) => {
-            log::warn!("Ignoring malformed settings file {:?}: {}", path, e);
-            AppearanceSettings::default()
-        }
-    }
+    ConnectionSettings::load().0
 }
 
 /// Persists the appearance settings. Failures are logged, never propagated.
+/// Persists the appearance section.
+///
+/// The connection section is read back first and rewritten alongside it: this
+/// function owns only the appearance keys, and a blind overwrite would silently
+/// discard every connection preference the user had saved.
 pub fn save_appearance(settings: &AppearanceSettings) {
-    let Some(path) = settings_path() else {
-        return;
-    };
+    let (_, connection) = ConnectionSettings::load();
+    ConnectionSettings::save(settings, &connection);
+}
 
-    match serde_json::to_string_pretty(settings) {
-        Ok(json) => {
-            log::debug!("PERSIST-WRITE {:?} -> {:?}", settings, path);
-            if let Err(e) = std::fs::write(&path, json) {
-                log::warn!("Could not write settings to {:?}: {}", path, e);
-            }
-        }
-        Err(e) => log::warn!("Could not serialize settings: {}", e),
-    }
+/// Persists the connection section, preserving the appearance section.
+pub fn save_connection(settings: &ConnectionSettings) {
+    let (appearance, _) = ConnectionSettings::load();
+    ConnectionSettings::save(&appearance, settings);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Connection defaults must match the session module's constants; a drift
+    /// here would make the settings page disagree with the generated config.
+    #[test]
+    fn connection_defaults_match_session_constants() {
+        let settings = ConnectionSettings::default();
+        assert_eq!(
+            settings.socks_port,
+            crate::core::session::DEFAULT_SOCKS_PORT
+        );
+        assert_eq!(settings.http_port, crate::core::session::DEFAULT_HTTP_PORT);
+        assert_eq!(settings.api_port, crate::core::session::DEFAULT_API_PORT);
+        assert_eq!(settings.mode, "system_proxy");
+        assert_eq!(settings.routing_strategy, "rule");
+    }
+
+    #[test]
+    fn connection_settings_survive_serialization() {
+        let original = ConnectionSettings {
+            socks_port: 12345,
+            tun_stack: "gvisor".to_string(),
+            tun_mtu: 1380,
+            tun_strict_route: true,
+            direct_domains: vec!["a.internal".to_string()],
+            ..Default::default()
+        };
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Wrap {
+            connection: ConnectionSettings,
+        }
+
+        let json = serde_json::to_string(&Wrap {
+            connection: original.clone(),
+        })
+        .expect("serialize");
+        let restored: Wrap = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.connection, original);
+    }
+
+    /// A settings file written before connection settings existed must still
+    /// load and gain defaults rather than failing.
+    #[test]
+    fn legacy_file_without_connection_section_loads() {
+        #[derive(serde::Deserialize)]
+        struct Document {
+            #[serde(flatten)]
+            appearance: AppearanceSettings,
+            #[serde(default)]
+            connection: ConnectionSettings,
+        }
+
+        let legacy = r##"{"accent_hex":"#2ec27e","color_scheme":"dark","wallpaper_id":"drift"}"##;
+        let doc: Document = serde_json::from_str(legacy).expect("legacy deserialize");
+        assert_eq!(doc.appearance.color_scheme, "dark");
+        assert_eq!(
+            doc.connection.socks_port,
+            crate::core::session::DEFAULT_SOCKS_PORT
+        );
+        assert_eq!(doc.connection.tun_mtu, 1500);
+    }
+
+    /// Both sections must coexist in one file, and each must survive a write of
+    /// the other: losing connection settings on an appearance change was a real
+    /// regression this guards against.
+    #[test]
+    fn both_sections_round_trip_together() {
+        let appearance = AppearanceSettings {
+            accent_hex: Some("#9141ac".to_string()),
+            color_scheme: "light".to_string(),
+            wallpaper_id: Some("evelyn".to_string()),
+        };
+        let connection = ConnectionSettings {
+            socks_port: 11111,
+            mode: "tun".to_string(),
+            ..Default::default()
+        };
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Document {
+            #[serde(flatten)]
+            appearance: AppearanceSettings,
+            #[serde(default)]
+            connection: ConnectionSettings,
+        }
+
+        #[derive(serde::Serialize)]
+        struct OutDocument<'a> {
+            #[serde(flatten)]
+            appearance: &'a AppearanceSettings,
+            connection: &'a ConnectionSettings,
+        }
+
+        let json = serde_json::to_string(&OutDocument {
+            appearance: &appearance,
+            connection: &connection,
+        })
+        .expect("serialize");
+
+        let parsed: Document = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed.appearance, appearance);
+        assert_eq!(parsed.connection, connection);
+        assert_eq!(parsed.connection.mode, "tun");
+    }
 
     #[test]
     fn scheme_index_roundtrip() {

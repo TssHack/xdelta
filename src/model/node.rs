@@ -76,6 +76,10 @@ pub struct Node {
     pub port: u16,
     pub protocol: Protocol,
     pub secret: String, // UUID, password, or key
+    /// Encryption method for protocols that need one (Shadowsocks ciphers).
+    /// `None` where the protocol fixes the cipher itself.
+    #[serde(default)]
+    pub cipher: Option<String>,
     pub flow: Option<String>,
     pub security: Security,
     pub transport: Transport,
@@ -86,6 +90,14 @@ pub struct Node {
     pub grpc: Option<GrpcConfig>,
     pub subscription_id: Option<String>,
     pub latency_ms: Option<u32>,
+    /// Result of the real end-to-end connectivity test, when one was run.
+    ///
+    /// Kept apart from the latency field because the two disagree: on the
+    /// bundled subscription the twelve lowest-TCP-latency servers all failed
+    /// to carry traffic, so ordering by latency alone ranks broken nodes
+    /// first.
+    #[serde(default)]
+    pub verified: Option<bool>,
     pub is_favorite: bool,
 }
 
@@ -105,6 +117,7 @@ impl Node {
             port,
             protocol,
             secret,
+            cipher: None,
             flow: None,
             security: Security::None,
             transport: Transport::Tcp,
@@ -115,7 +128,46 @@ impl Node {
             grpc: None,
             subscription_id: None,
             latency_ms: None,
+            verified: None,
             is_favorite: false,
         }
     }
+
+    /// Whether this node is known to carry traffic, unknown, or known to fail.
+    pub fn verification_state(&self) -> VerificationState {
+        match self.verified {
+            Some(true) => VerificationState::Working,
+            Some(false) => VerificationState::Failed,
+            None => VerificationState::Unknown,
+        }
+    }
+
+    /// Sort bucket that puts working servers first, then untested, then failed.
+    ///
+    /// Ordering by latency alone would rank servers that answer TCP but cannot
+    /// carry traffic above servers that actually work, which is the failure
+    /// measured on the bundled subscription.
+    pub fn rank_bucket(&self) -> u8 {
+        match self.verification_state() {
+            VerificationState::Working => 0,
+            VerificationState::Unknown => 1,
+            VerificationState::Failed => 2,
+        }
+    }
+
+    /// Latency used for ordering; untested nodes sort last.
+    pub fn sort_latency(&self) -> u32 {
+        self.latency_ms.unwrap_or(u32::MAX)
+    }
+}
+
+/// Outcome of a real connectivity test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerificationState {
+    /// Confirmed to carry traffic.
+    Working,
+    /// Never tested.
+    Unknown,
+    /// Tested and found unable to carry traffic.
+    Failed,
 }

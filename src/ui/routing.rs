@@ -51,7 +51,7 @@ impl RoutingView {
 
         let bypass_iran_switch = Switch::builder().active(true).valign(Align::Center).build();
         let bypass_row = ActionRow::builder()
-            .title("Bypass Iran & LAN")
+            .title("Bypass Iran &amp; LAN")
             .subtitle("Route domestic domains (.ir) and local CIDRs directly")
             .activatable_widget(&bypass_iran_switch)
             .build();
@@ -60,7 +60,7 @@ impl RoutingView {
 
         let block_ads_switch = Switch::builder().active(true).valign(Align::Center).build();
         let ads_row = ActionRow::builder()
-            .title("Block Advertisements & Trackers")
+            .title("Block Advertisements &amp; Trackers")
             .subtitle("Drop traffic destined for known ad and telemetry domains")
             .activatable_widget(&block_ads_switch)
             .build();
@@ -116,6 +116,17 @@ impl RoutingView {
             block_ads_switch,
             direct_domain_entry,
         }
+    }
+
+    /// Copies the Routing page's choices onto a connection profile.
+    pub fn apply_to(&self, profile: &mut crate::core::ConnectionProfile) {
+        profile.routing.strategy =
+            crate::core::RoutingStrategy::from_index(self.routing_mode_row.selected());
+        profile.routing.bypass_iran = self.bypass_iran_switch.is_active();
+        profile.routing.block_ads = self.block_ads_switch.is_active();
+        profile.routing.direct_domains = crate::core::RoutingOptions::parse_direct_domains(
+            self.direct_domain_entry.text().as_ref(),
+        );
     }
 }
 

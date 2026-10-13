@@ -18,6 +18,7 @@ Built with Rust, GTK4, and Libadwaita. Designed for the modern Linux desktop.
 <br/>
 
 [Overview](#-overview) •
+[Screenshots](#-screenshots) •
 [Comparison](#-how-xdelta-compares) •
 [Protocols](#-supported-protocols) •
 [Architecture](#-architecture) •
@@ -39,6 +40,23 @@ Linux users needing circumvention tools typically face a bad trade-off: bloated 
 - **Native GNOME HIG design:** Follows system styling, accent colors, and dark/light mode automatically.
 - **Dual-core flexibility:** Drives both **Xray-Core** and **Sing-Box** through a unified interface.
 - **Non-blocking concurrency:** Runs all latency tests and subscription updates on Tokio worker threads without dropping UI frames.
+
+---
+
+## 📸 Screenshots
+
+<div align="center">
+
+### Dashboard — Power Hub & Telemetry
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Servers — Real-time Latency & Protocol Matrix
+![Servers](docs/screenshots/servers.png)
+
+### Settings — Accent Color, Wallpapers & System Integration
+![Settings](docs/screenshots/settings.png)
+
+</div>
 
 ---
 

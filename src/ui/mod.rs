@@ -6,6 +6,7 @@ pub mod settings;
 pub mod subscriptions;
 pub mod theme;
 pub mod wallpaper;
+pub mod widget_audit;
 pub mod window;
 
 pub use dashboard::DashboardView;

@@ -172,6 +172,14 @@
   border: 1px solid var(--xdelta-brand);
 }
 
+/* Failure state: semantically red, never themed, so a broken connection cannot
+   be mistaken for a healthy one under any accent. */
+.status-error {
+  background-color: color-mix(in srgb, var(--xdelta-error) 18%, transparent);
+  color: var(--xdelta-error);
+  border: 1px solid var(--xdelta-error);
+}
+
 /* Active Server Banner inside Power Card */
 .active-server-banner {
   background-color: var(--window-bg-color);

@@ -24,6 +24,7 @@ impl App {
         app.connect_startup(|_| {
             Self::load_css();
             Self::init_icon_theme();
+            Self::apply_saved_appearance();
         });
 
         app.connect_activate(|app| {
@@ -77,6 +78,18 @@ impl App {
 
             main_window.servers_view.set_nodes(sample_nodes);
 
+            // Apply the saved wallpaper now that the window exists.
+            let saved_wallpaper = crate::core::persist::load_appearance().wallpaper_id;
+            main_window.set_wallpaper(saved_wallpaper.as_deref());
+
+            // Let the Appearance view drive the background after a selection.
+            let window_for_wallpaper = main_window.clone();
+            main_window
+                .settings_view
+                .connect_wallpaper_changed(move |id| {
+                    window_for_wallpaper.set_wallpaper(id);
+                });
+
             // Core Process State
             let core_manager: Rc<RefCell<Option<CoreProcessManager>>> = Rc::new(RefCell::new(None));
 
@@ -94,7 +107,10 @@ impl App {
             glib::MainContext::default().spawn_local(async move {
                 if let Ok(info) = crate::updater::check_for_updates().await {
                     if info.has_update {
-                        banner.set_title(&format!("⚡ New release <b>v{}</b> available on GitHub!", info.version));
+                        banner.set_title(&format!(
+                            "⚡ New release <b>v{}</b> available on GitHub!",
+                            info.version
+                        ));
                         banner.set_revealed(true);
                     }
                 }
@@ -136,10 +152,8 @@ impl App {
 
                 if let Some(node) = active_node {
                     server_name_lbl.set_label(&node.name);
-                    server_sub_label.set_label(&format!(
-                        "{} • Connecting...",
-                        node.protocol.as_str()
-                    ));
+                    server_sub_label
+                        .set_label(&format!("{} • Connecting...", node.protocol.as_str()));
 
                     // Generate Xray config & launch process
                     if let Ok(config_json) = generate_xray_config(node, 10808, 10809) {
@@ -166,10 +180,8 @@ impl App {
                     status_badge.remove_css_class("status-disconnected");
                     status_badge.add_css_class("status-connected");
 
-                    server_sub_label.set_label(&format!(
-                        "Active • {} ms",
-                        node.latency_ms.unwrap_or(120)
-                    ));
+                    server_sub_label
+                        .set_label(&format!("Active • {} ms", node.latency_ms.unwrap_or(120)));
                     down_label.set_label("4.82 MB/s");
                     up_label.set_label("320 KB/s");
                 }
@@ -273,6 +285,23 @@ impl App {
                 });
             }
         });
+    }
+
+    /// Restores the appearance the user last chose, before the window is shown.
+    fn apply_saved_appearance() {
+        let settings = crate::core::persist::load_appearance();
+
+        let style_manager = libadwaita::StyleManager::default();
+        style_manager.set_color_scheme(match settings.scheme_index() {
+            1 => libadwaita::ColorScheme::ForceDark,
+            2 => libadwaita::ColorScheme::ForceLight,
+            _ => libadwaita::ColorScheme::Default,
+        });
+
+        crate::ui::theme::apply(settings.accent_hex.as_deref());
+
+        // The wallpaper itself is applied once the window exists, in
+        // `connect_activate`, because it needs the picture widget.
     }
 
     fn load_css() {

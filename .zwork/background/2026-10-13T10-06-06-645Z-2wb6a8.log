@@ -1,0 +1,8 @@
+Listening on /home/ehsan/xdelta/.bw/broadway2.socket
+total 0
+drwx------ 1 ehsan ehsan   0 Oct 13 13:36 .
+drwxr-xr-x 1 ehsan ehsan 202 Oct 13 13:36 ..
+
+thread 'main' (315054) panicked at src/main.rs:14:24:
+Failed to initialize Libadwaita: BoolError { message: "Failed to initialize GTK", filename: "/home/ehsan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gtk4-0.9.7/src/rt.rs", function: "gtk4::rt::init", line: 159 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

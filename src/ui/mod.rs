@@ -3,6 +3,8 @@ pub mod routing;
 pub mod servers;
 pub mod settings;
 pub mod subscriptions;
+pub mod theme;
+pub mod wallpaper;
 pub mod window;
 
 pub use dashboard::DashboardView;

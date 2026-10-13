@@ -3,18 +3,22 @@
    ========================================================================== */
 
 :root {
-  --xdelta-emerald: #2ec27e;
-  --xdelta-emerald-glow: rgba(46, 194, 126, 0.4);
-  --xdelta-emerald-bg: rgba(46, 194, 126, 0.12);
-  
-  --xdelta-cyan: #3584e4;
-  --xdelta-cyan-glow: rgba(53, 132, 228, 0.35);
-  
-  --xdelta-ruby: #e01b24;
-  --xdelta-ruby-glow: rgba(224, 27, 36, 0.35);
-  
-  --xdelta-amber: #e5a50a;
-  --xdelta-purple: #9141ac;
+  /* ----------------------------------------------------------------------
+     Brand palette — `ui/theme.rs` overrides these three variables at runtime
+     whenever the user picks an accent, so every brand surface stays in sync.
+     Never reference a literal brand color below this block.
+     ---------------------------------------------------------------------- */
+  --xdelta-brand: #3584e4;
+  --xdelta-brand-glow: rgba(53, 132, 228, 0.35);
+  --xdelta-brand-bg: rgba(53, 132, 228, 0.12);
+
+  /* ----------------------------------------------------------------------
+     Semantic states — intentionally NOT themeable, so their meaning survives
+     whatever accent the user picks.
+     ---------------------------------------------------------------------- */
+  --xdelta-success: #2ec27e;
+  --xdelta-warning: #e5a50a;
+  --xdelta-error: #e01b24;
 }
 
 /* --------------------------------------------------------------------------
@@ -31,7 +35,7 @@
 }
 
 .sidebar-logo {
-  color: var(--accent-color, var(--xdelta-cyan));
+  color: var(--xdelta-brand);
 }
 
 .sidebar-brand-title {
@@ -70,8 +74,8 @@
 
 .sidebar-nav-row:selected,
 .sidebar-nav-row.active {
-  background-color: color-mix(in srgb, var(--accent-bg-color, var(--xdelta-cyan)) 15%, transparent);
-  color: var(--accent-color, var(--xdelta-cyan));
+  background-color: color-mix(in srgb, var(--xdelta-brand) 15%, transparent);
+  color: var(--xdelta-brand);
 }
 
 .sidebar-footer {
@@ -124,21 +128,23 @@
 .power-btn-disconnected {
   border-color: rgba(128, 128, 128, 0.25);
   background-color: color-mix(in srgb, var(--card-bg-color) 85%, var(--window-bg-color));
+  color: var(--xdelta-error);
 }
 
 .power-btn-disconnected:hover {
-  border-color: var(--accent-color, var(--xdelta-cyan));
-  box-shadow: 0 8px 28px var(--xdelta-cyan-glow);
+  border-color: var(--xdelta-brand);
+  box-shadow: 0 8px 28px var(--xdelta-brand-glow);
 }
 
 .power-btn-connected {
-  border-color: var(--xdelta-emerald);
-  background-color: color-mix(in srgb, var(--xdelta-emerald) 18%, var(--card-bg-color));
-  box-shadow: 0 0 35px var(--xdelta-emerald-glow);
+  border-color: var(--xdelta-brand);
+  background-color: color-mix(in srgb, var(--xdelta-brand) 18%, var(--card-bg-color));
+  box-shadow: 0 0 35px var(--xdelta-brand-glow);
+  color: var(--xdelta-brand);
 }
 
 .power-btn-connected:hover {
-  box-shadow: 0 0 50px var(--xdelta-emerald-glow);
+  box-shadow: 0 0 50px var(--xdelta-brand-glow);
 }
 
 .power-icon-large {
@@ -161,9 +167,9 @@
 }
 
 .status-connected {
-  background-color: var(--xdelta-emerald-bg);
-  color: var(--xdelta-emerald);
-  border: 1px solid var(--xdelta-emerald);
+  background-color: var(--xdelta-brand-bg);
+  color: var(--xdelta-brand);
+  border: 1px solid var(--xdelta-brand);
 }
 
 /* Active Server Banner inside Power Card */
@@ -201,11 +207,11 @@
 }
 
 .speed-down {
-  color: var(--xdelta-emerald);
+  color: var(--xdelta-brand);
 }
 
 .speed-up {
-  color: var(--xdelta-cyan);
+  color: color-mix(in srgb, var(--xdelta-brand) 55%, var(--window-fg-color));
 }
 
 /* --------------------------------------------------------------------------
@@ -219,19 +225,36 @@
   letter-spacing: 0.5px;
 }
 
+/* Protocol badges derive from the brand palette, tinted by rank so the six
+   protocols stay visually distinguishable in a monochrome theme. */
 .badge-vless {
-  background-color: color-mix(in srgb, var(--xdelta-cyan) 20%, transparent);
-  color: var(--xdelta-cyan);
+  background-color: color-mix(in srgb, var(--xdelta-brand) 20%, transparent);
+  color: var(--xdelta-brand);
 }
 
 .badge-vmess {
-  background-color: color-mix(in srgb, var(--xdelta-purple) 20%, transparent);
-  color: var(--xdelta-purple);
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--xdelta-brand) 65%, var(--xdelta-warning)) 20%, transparent);
+  color: color-mix(in srgb, var(--xdelta-brand) 65%, var(--xdelta-warning));
 }
 
 .badge-trojan {
-  background-color: color-mix(in srgb, var(--xdelta-amber) 25%, transparent);
-  color: #c88a00;
+  background-color: color-mix(in srgb, var(--xdelta-warning) 25%, transparent);
+  color: color-mix(in srgb, var(--xdelta-warning) 75%, black);
+}
+
+.badge-ss {
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--xdelta-brand) 55%, var(--xdelta-success)) 20%, transparent);
+  color: color-mix(in srgb, var(--xdelta-brand) 55%, var(--xdelta-success));
+}
+
+.badge-hy2 {
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--xdelta-brand) 40%, var(--xdelta-error)) 20%, transparent);
+  color: color-mix(in srgb, var(--xdelta-brand) 40%, var(--xdelta-error));
+}
+
+.badge-tuic {
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--xdelta-brand) 40%, var(--xdelta-success)) 20%, transparent);
+  color: color-mix(in srgb, var(--xdelta-brand) 40%, var(--xdelta-success));
 }
 
 .badge-latency {
@@ -242,19 +265,20 @@
   border-radius: 6px;
 }
 
+/* Latency stays semantic: green/amber/red read as good/medium/poor at a glance. */
 .latency-good {
-  background-color: color-mix(in srgb, var(--xdelta-emerald) 20%, transparent);
-  color: var(--xdelta-emerald);
+  background-color: color-mix(in srgb, var(--xdelta-success) 20%, transparent);
+  color: var(--xdelta-success);
 }
 
 .latency-medium {
-  background-color: color-mix(in srgb, var(--xdelta-amber) 25%, transparent);
-  color: #b58900;
+  background-color: color-mix(in srgb, var(--xdelta-warning) 25%, transparent);
+  color: color-mix(in srgb, var(--xdelta-warning) 75%, black);
 }
 
 .latency-poor {
-  background-color: color-mix(in srgb, var(--xdelta-ruby) 20%, transparent);
-  color: var(--xdelta-ruby);
+  background-color: color-mix(in srgb, var(--xdelta-error) 20%, transparent);
+  color: var(--xdelta-error);
 }
 
 .latency-unknown {
@@ -276,7 +300,81 @@
 }
 
 .server-card-row:hover {
-  border-color: var(--accent-color, var(--xdelta-cyan));
+  border-color: var(--xdelta-brand);
+}
+
+/* --------------------------------------------------------------------------
+   Accent Color Controls (Appearance)
+   -------------------------------------------------------------------------- */
+.preset-swatch {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid alpha(currentColor, 0.25);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.preset-swatch:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px alpha(currentColor, 0.18);
+}
+
+/* Swatch colors are generated at runtime from `ui::theme::PRESETS`, so the
+   palette is defined in exactly one place. See `swatch_css()` in ui/theme.rs. */
+
+/* --------------------------------------------------------------------------
+   Wallpaper Background
+   -------------------------------------------------------------------------- */
+
+/* Dims the image so interface text keeps its contrast on bright artwork.
+   The value is deliberately mild: heavy dimming makes the wallpaper pointless,
+   while none at all makes light images unreadable. */
+.wallpaper-scrim {
+  background-color: alpha(black, 0.42);
+}
+
+/* Surfaces turn translucent only while a wallpaper is showing, so the plain
+   look without a background stays exactly as before. */
+.wallpaper-active .sidebar-pane {
+  background-color: alpha(var(--window-bg-color), 0.72);
+}
+
+.wallpaper-active .power-hub-card,
+.wallpaper-active .telemetry-card,
+.wallpaper-active .server-card-row {
+  background-color: alpha(var(--card-bg-color), 0.78);
+}
+
+.wallpaper-active headerbar {
+  background-color: alpha(var(--headerbar-bg-color, var(--window-bg-color)), 0.72);
+}
+
+.wallpaper-active .active-server-banner {
+  background-color: alpha(var(--window-bg-color), 0.6);
+}
+
+/* Wallpaper gallery: thumbnail buttons that read as a radio group. */
+.wallpaper-thumb {
+  padding: 0;
+  min-width: 52px;
+  min-height: 34px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: none;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.wallpaper-thumb:hover {
+  border-color: alpha(currentColor, 0.35);
+}
+
+/* The active choice is marked by the accent ring, so the selection stays
+   legible even when the thumbnail itself is a busy image. */
+.wallpaper-thumb:checked {
+  border-color: var(--accent-bg-color, var(--xdelta-brand));
+  box-shadow: 0 0 0 1px var(--accent-bg-color, var(--xdelta-brand));
 }
 
 /* --------------------------------------------------------------------------

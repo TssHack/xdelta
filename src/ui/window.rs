@@ -3,8 +3,12 @@ use crate::ui::routing::RoutingView;
 use crate::ui::servers::ServersView;
 use crate::ui::settings::SettingsView;
 use crate::ui::subscriptions::SubscriptionsView;
+use crate::ui::wallpaper;
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, Image, Label, ListBox, ListBoxRow, Orientation};
+use gtk4::{
+    Align, Box, Button, ContentFit, Image, Label, ListBox, ListBoxRow, Orientation, Overlay,
+    Picture,
+};
 use libadwaita::prelude::*;
 use libadwaita::{
     Application, ApplicationWindow, Banner, Breakpoint, BreakpointCondition, HeaderBar,
@@ -25,6 +29,10 @@ pub struct MainWindow {
     pub page_title_label: Label,
     pub split_view: OverlaySplitView,
     pub update_banner: Banner,
+    /// Background image layer, behind the whole interface.
+    pub wallpaper_picture: Picture,
+    /// Scrim drawn between the wallpaper and the interface for readability.
+    wallpaper_scrim: Box,
 }
 
 impl MainWindow {
@@ -148,6 +156,18 @@ impl MainWindow {
         });
         header_bar.pack_start(&sidebar_toggle_btn);
 
+        // Header About Button
+        let about_btn = Button::builder()
+            .icon_name("help-about-symbolic")
+            .tooltip_text("About xdelta")
+            .build();
+        about_btn.add_css_class("flat");
+        let win_about_clone = window.clone();
+        about_btn.connect_clicked(move |_| {
+            Self::show_about_dialog(&win_about_clone);
+        });
+        header_bar.pack_end(&about_btn);
+
         // In-app Update Banner (revealed dynamically if new release is found)
         let update_banner = Banner::builder()
             .title("⚡ A new version of xdelta is available on GitHub")
@@ -176,7 +196,7 @@ impl MainWindow {
 
         let dash_page =
             view_stack.add_titled(&dashboard_view.container, Some("dashboard"), "Dashboard");
-        dash_page.set_icon_name(Some("speedometer-symbolic"));
+        dash_page.set_icon_name(Some("xdelta-symbolic"));
 
         let srv_page = view_stack.add_titled(&servers_view.container, Some("servers"), "Servers");
         srv_page.set_icon_name(Some("network-server-symbolic"));
@@ -186,7 +206,7 @@ impl MainWindow {
             Some("subscriptions"),
             "Subscriptions",
         );
-        subs_page.set_icon_name(Some("folder-download-symbolic"));
+        subs_page.set_icon_name(Some("xdelta-symbolic"));
 
         let route_page = view_stack.add_titled(&routing_view.container, Some("routing"), "Routing");
         route_page.set_icon_name(Some("route-symbolic"));
@@ -267,7 +287,33 @@ impl MainWindow {
             window.add_breakpoint(breakpoint);
         }
 
-        window.set_content(Some(&split_view));
+        // ==========================================
+        // 4. BACKGROUND LAYER
+        // ==========================================
+        // Layer order in a GtkOverlay: the main child is painted first (behind),
+        // then each overlay child in order. So the wallpaper is the main child,
+        // the scrim is added next, and the interface is added last on top.
+        let wallpaper_picture = Picture::builder()
+            .content_fit(ContentFit::Cover)
+            .can_shrink(true)
+            .hexpand(true)
+            .vexpand(true)
+            .visible(false)
+            .build();
+        wallpaper_picture.add_css_class("wallpaper-image");
+        // The background must never swallow clicks meant for the interface.
+        wallpaper_picture.set_can_target(false);
+
+        let wallpaper_scrim = Box::new(Orientation::Vertical, 0);
+        wallpaper_scrim.add_css_class("wallpaper-scrim");
+        wallpaper_scrim.set_visible(false);
+        wallpaper_scrim.set_can_target(false);
+
+        let root = Overlay::new();
+        root.set_child(Some(&wallpaper_picture));
+        root.add_overlay(&wallpaper_scrim);
+        root.add_overlay(&split_view);
+        window.set_content(Some(&root));
 
         Self {
             window,
@@ -282,6 +328,32 @@ impl MainWindow {
             page_title_label,
             split_view,
             update_banner,
+            wallpaper_picture,
+            wallpaper_scrim,
+        }
+    }
+
+    /// Applies a wallpaper selection to the running window.
+    ///
+    /// Passing `None` disables the background and restores the plain window,
+    /// including re-opaque surfaces, so the default look is untouched.
+    pub fn set_wallpaper(&self, id: Option<&str>) {
+        match id.and_then(wallpaper::load_texture) {
+            Some(texture) => {
+                self.wallpaper_picture.set_paintable(Some(&texture));
+                self.wallpaper_picture.set_visible(true);
+                self.wallpaper_scrim.set_visible(true);
+
+                // Translucent surfaces only make sense while a wallpaper shows.
+                self.window.add_css_class("wallpaper-active");
+            }
+            None => {
+                self.wallpaper_picture
+                    .set_paintable(None::<&gtk4::gdk::Texture>);
+                self.wallpaper_picture.set_visible(false);
+                self.wallpaper_scrim.set_visible(false);
+                self.window.remove_css_class("wallpaper-active");
+            }
         }
     }
 
@@ -302,6 +374,21 @@ impl MainWindow {
         row.set_child(Some(&row_box));
 
         row
+    }
+
+    pub fn show_about_dialog(parent: &ApplicationWindow) {
+        let about = libadwaita::AboutDialog::builder()
+            .application_name("xdelta")
+            .application_icon("xdelta-app")
+            .developer_name("TssHack & xdelta Contributors")
+            .version(crate::updater::CURRENT_VERSION)
+            .comments("Native, high-performance Linux proxy client for Xray and Sing-box")
+            .website("https://github.com/TssHack/xdelta")
+            .issue_url("https://github.com/TssHack/xdelta/issues")
+            .license_type(gtk4::License::Gpl30)
+            .copyright("© 2026 xdelta contributors")
+            .build();
+        about.present(Some(parent));
     }
 
     pub fn present(&self) {

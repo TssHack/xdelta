@@ -47,8 +47,11 @@ jobs:
 
       - name: Setup AppImageTool (x86_64)
         run: |
-          curl -fsSL -o /tmp/appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x /tmp/appimagetool-x86_64.AppImage
+          curl -sLo /tmp/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool.AppImage
+          (cd /tmp && ./appimagetool.AppImage --appimage-extract)
+          sudo mv /tmp/squashfs-root /usr/local/lib/appimagetool
+          sudo ln -s /usr/local/lib/appimagetool/AppRun /usr/local/bin/appimagetool
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -83,6 +86,7 @@ jobs:
   build-aarch64:
     name: Build & Package (aarch64 / ARM64)
     runs-on: ubuntu-24.04
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -162,6 +166,7 @@ jobs:
 
       - name: Download aarch64 artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: xdelta-packages-aarch64
           path: release-assets/

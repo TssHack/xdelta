@@ -1,4 +1,6 @@
-use crate::model::Node;
+use crate::model::{Node, Protocol};
+use crate::net::tcp_ping;
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Align, Box, Button, CheckButton, Label, ListBox, Orientation, ScrolledWindow, SearchEntry,
@@ -7,6 +9,7 @@ use libadwaita::prelude::*;
 use libadwaita::ActionRow;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 pub struct ServersView {
     pub container: Box,
@@ -15,21 +18,22 @@ pub struct ServersView {
     pub list_box: ListBox,
     pub nodes: Rc<RefCell<Vec<Node>>>,
     pub selected_node_id: Rc<RefCell<Option<String>>>,
+    pub current_filter: Rc<RefCell<Option<Protocol>>>,
 }
 
 impl ServersView {
     pub fn new() -> Self {
         let container = Box::builder()
             .orientation(Orientation::Vertical)
-            .spacing(12)
+            .spacing(14)
             .margin_top(16)
             .margin_bottom(16)
-            .margin_start(16)
-            .margin_end(16)
+            .margin_start(20)
+            .margin_end(20)
             .build();
 
-        // Header controls (Search & Ping All)
-        let header_box = Box::builder()
+        // 1. Top Bar: Search Entry & Test All Button
+        let top_box = Box::builder()
             .orientation(Orientation::Horizontal)
             .spacing(12)
             .build();
@@ -43,12 +47,36 @@ impl ServersView {
             .label("Test All")
             .icon_name("network-transmit-receive-symbolic")
             .build();
-        ping_all_button.add_css_class("flat");
+        ping_all_button.add_css_class("suggested-action");
 
-        header_box.append(&search_entry);
-        header_box.append(&ping_all_button);
+        top_box.append(&search_entry);
+        top_box.append(&ping_all_button);
 
-        // Server list
+        // 2. Filter Pills Bar (All, VLESS, VMess, Trojan)
+        let filter_box = Box::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        let all_btn = Button::builder().label("All Protocols").build();
+        all_btn.add_css_class("pill");
+        all_btn.add_css_class("active");
+
+        let vless_btn = Button::builder().label("VLESS").build();
+        vless_btn.add_css_class("pill");
+
+        let vmess_btn = Button::builder().label("VMess").build();
+        vmess_btn.add_css_class("pill");
+
+        let trojan_btn = Button::builder().label("Trojan").build();
+        trojan_btn.add_css_class("pill");
+
+        filter_box.append(&all_btn);
+        filter_box.append(&vless_btn);
+        filter_box.append(&vmess_btn);
+        filter_box.append(&trojan_btn);
+
+        // 3. Server List
         let list_box = ListBox::builder()
             .selection_mode(gtk4::SelectionMode::None)
             .build();
@@ -61,26 +89,37 @@ impl ServersView {
             .child(&list_box)
             .build();
 
-        container.append(&header_box);
+        container.append(&top_box);
+        container.append(&filter_box);
         container.append(&scrolled);
 
-        Self {
+        let nodes = Rc::new(RefCell::new(Vec::new()));
+        let selected_node_id = Rc::new(RefCell::new(None));
+        let current_filter = Rc::new(RefCell::new(None));
+
+        let view = Self {
             container,
             search_entry,
             ping_all_button,
             list_box,
-            nodes: Rc::new(RefCell::new(Vec::new())),
-            selected_node_id: Rc::new(RefCell::new(None)),
-        }
+            nodes,
+            selected_node_id,
+            current_filter,
+        };
+
+        view.setup_ping_all_handler();
+        view
     }
 
     pub fn set_nodes(&self, nodes: Vec<Node>) {
+        if self.selected_node_id.borrow().is_none() && !nodes.is_empty() {
+            *self.selected_node_id.borrow_mut() = Some(nodes[0].id.clone());
+        }
         *self.nodes.borrow_mut() = nodes.clone();
         self.render_nodes(&nodes);
     }
 
     pub fn render_nodes(&self, nodes: &[Node]) {
-        // Clear existing children
         while let Some(child) = self.list_box.first_child() {
             self.list_box.remove(&child);
         }
@@ -102,28 +141,61 @@ impl ServersView {
             row.add_prefix(&proto_badge);
 
             // Latency badge
-            let latency_text = match node.latency_ms {
-                Some(ms) => format!("{} ms", ms),
-                None => "-- ms".to_string(),
-            };
-            let latency_badge = Label::builder().label(&latency_text).build();
+            let latency_badge = Label::builder().build();
             latency_badge.add_css_class("badge-latency");
-            match node.latency_ms {
-                Some(ms) if ms < 300 => latency_badge.add_css_class("latency-good"),
-                Some(ms) if ms < 600 => latency_badge.add_css_class("latency-medium"),
-                Some(_) => latency_badge.add_css_class("latency-poor"),
-                None => latency_badge.add_css_class("latency-unknown"),
-            }
+            Self::update_latency_badge(&latency_badge, node.latency_ms);
             row.add_suffix(&latency_badge);
 
+            // Individual Ping Button (Real-time TCP ping on click)
+            let ping_btn = Button::builder()
+                .icon_name("view-refresh-symbolic")
+                .valign(Align::Center)
+                .tooltip_text("Ping this server now")
+                .build();
+            ping_btn.add_css_class("flat");
+
+            let host = node.server.clone();
+            let port = node.port;
+            let badge_clone = latency_badge.clone();
+            let ping_btn_clone = ping_btn.clone();
+
+            ping_btn.connect_clicked(move |_| {
+                let badge = badge_clone.clone();
+                let p_btn = ping_btn_clone.clone();
+                badge.set_label("testing...");
+                p_btn.set_sensitive(false);
+
+                let host = host.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let result = tcp_ping(&host, port, Duration::from_secs(3)).await;
+                    p_btn.set_sensitive(true);
+                    match result {
+                        Ok(ms) => Self::update_latency_badge(&badge, Some(ms)),
+                        Err(_) => Self::update_latency_badge(&badge, None),
+                    }
+                });
+            });
+            row.add_suffix(&ping_btn);
+
             // Radio button for selection
+            let is_selected = self
+                .selected_node_id
+                .borrow()
+                .as_ref()
+                .map(|id| id == &node.id)
+                .unwrap_or(false);
+
             let radio = match &first_radio {
                 Some(group_lead) => CheckButton::builder()
                     .group(group_lead)
                     .valign(Align::Center)
+                    .active(is_selected)
                     .build(),
                 None => {
-                    let r = CheckButton::builder().valign(Align::Center).build();
+                    let r = CheckButton::builder()
+                        .valign(Align::Center)
+                        .active(is_selected)
+                        .build();
                     first_radio = Some(r.clone());
                     r
                 }
@@ -140,6 +212,69 @@ impl ServersView {
             row.add_suffix(&radio);
             self.list_box.append(&row);
         }
+    }
+
+    fn update_latency_badge(badge: &Label, latency_ms: Option<u32>) {
+        badge.remove_css_class("latency-good");
+        badge.remove_css_class("latency-medium");
+        badge.remove_css_class("latency-poor");
+        badge.remove_css_class("latency-unknown");
+
+        match latency_ms {
+            Some(ms) => {
+                badge.set_label(&format!("{} ms", ms));
+                if ms < 250 {
+                    badge.add_css_class("latency-good");
+                } else if ms < 500 {
+                    badge.add_css_class("latency-medium");
+                } else {
+                    badge.add_css_class("latency-poor");
+                }
+            }
+            None => {
+                badge.set_label("-- ms");
+                badge.add_css_class("latency-unknown");
+            }
+        }
+    }
+
+    fn setup_ping_all_handler(&self) {
+        let ping_btn = self.ping_all_button.clone();
+        let nodes_ref = self.nodes.clone();
+        let list_box = self.list_box.clone();
+
+        ping_btn.connect_clicked(move |btn| {
+            btn.set_sensitive(false);
+            btn.set_label("Pinging All...");
+
+            let nodes = nodes_ref.borrow().clone();
+            let btn_clone = btn.clone();
+            let nodes_ref_clone = nodes_ref.clone();
+            let list_box_clone = list_box.clone();
+
+            glib::MainContext::default().spawn_local(async move {
+                let updated = crate::net::batch_ping_nodes(nodes, 10, Duration::from_secs(3)).await;
+                *nodes_ref_clone.borrow_mut() = updated.clone();
+
+                btn_clone.set_sensitive(true);
+                btn_clone.set_label("Test All");
+
+                // Update latency badges on existing rows
+                let mut child = list_box_clone.first_child();
+                let mut idx = 0;
+                while let Some(widget) = child {
+                    if idx < updated.len() {
+                        if let Some(row) = widget.downcast_ref::<ActionRow>() {
+                            if let Some(ms) = updated[idx].latency_ms {
+                                row.set_subtitle(&format!("{} ms latency", ms));
+                            }
+                        }
+                    }
+                    child = widget.next_sibling();
+                    idx += 1;
+                }
+            });
+        });
     }
 }
 

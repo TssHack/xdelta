@@ -1,5 +1,7 @@
 use crate::ui::dashboard::DashboardView;
+use crate::ui::routing::RoutingView;
 use crate::ui::servers::ServersView;
+use crate::ui::settings::SettingsView;
 use crate::ui::subscriptions::SubscriptionsView;
 use gtk4::prelude::*;
 use gtk4::{
@@ -16,6 +18,8 @@ pub struct MainWindow {
     pub dashboard_view: Rc<DashboardView>,
     pub servers_view: Rc<ServersView>,
     pub subscriptions_view: Rc<SubscriptionsView>,
+    pub routing_view: Rc<RoutingView>,
+    pub settings_view: Rc<SettingsView>,
     pub content_stack: Stack,
     pub nav_list: ListBox,
     pub page_title_label: Label,
@@ -26,8 +30,8 @@ impl MainWindow {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("xdelta")
-            .default_width(960)
-            .default_height(680)
+            .default_width(980)
+            .default_height(690)
             .build();
 
         // Main Horizontal Split: Left Sidebar + Right Content
@@ -76,10 +80,14 @@ impl MainWindow {
         let dash_row = Self::create_nav_row("speedometer-symbolic", "Dashboard");
         let servers_row = Self::create_nav_row("network-server-symbolic", "Servers");
         let subs_row = Self::create_nav_row("folder-download-symbolic", "Subscriptions");
+        let routing_row = Self::create_nav_row("route-symbolic", "Routing");
+        let settings_row = Self::create_nav_row("preferences-system-symbolic", "Settings");
 
         nav_list.append(&dash_row);
         nav_list.append(&servers_row);
         nav_list.append(&subs_row);
+        nav_list.append(&routing_row);
+        nav_list.append(&settings_row);
 
         // Sidebar Footer (Active Core Indicator)
         let footer_box = Box::builder()
@@ -128,10 +136,14 @@ impl MainWindow {
         let dashboard_view = Rc::new(DashboardView::new());
         let servers_view = Rc::new(ServersView::new());
         let subscriptions_view = Rc::new(SubscriptionsView::new());
+        let routing_view = Rc::new(RoutingView::new());
+        let settings_view = Rc::new(SettingsView::new());
 
         content_stack.add_named(&dashboard_view.container, Some("dashboard"));
         content_stack.add_named(&servers_view.container, Some("servers"));
         content_stack.add_named(&subscriptions_view.container, Some("subscriptions"));
+        content_stack.add_named(&routing_view.container, Some("routing"));
+        content_stack.add_named(&settings_view.container, Some("settings"));
 
         right_container.append(&header_bar);
         right_container.append(&content_stack);
@@ -154,6 +166,14 @@ impl MainWindow {
                         stack_clone.set_visible_child_name("subscriptions");
                         title_clone.set_label("Subscriptions");
                     }
+                    3 => {
+                        stack_clone.set_visible_child_name("routing");
+                        title_clone.set_label("Routing Rules");
+                    }
+                    4 => {
+                        stack_clone.set_visible_child_name("settings");
+                        title_clone.set_label("Settings");
+                    }
                     _ => {}
                 }
             }
@@ -172,6 +192,8 @@ impl MainWindow {
             dashboard_view,
             servers_view,
             subscriptions_view,
+            routing_view,
+            settings_view,
             content_stack,
             nav_list,
             page_title_label,

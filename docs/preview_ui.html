@@ -14,12 +14,12 @@
   .app-window {
     display: flex;
     width: 100%;
-    max-width: 860px;
-    height: 580px;
+    max-width: 900px;
+    height: 600px;
     border-radius: 16px;
     background: var(--card);
     border: 1px solid var(--border);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
     overflow: hidden;
   }
   /* Sidebar */
@@ -78,7 +78,7 @@
     color: var(--foreground);
   }
   .nav-item.active {
-    background: rgba(53, 132, 228, 0.15);
+    background: rgba(53, 132, 228, 0.16);
     color: #3584e4;
   }
   .sidebar-bottom {
@@ -122,11 +122,14 @@
     font-size: 17px;
     font-weight: 700;
   }
-  .main-dash {
+  .view-pane {
     padding: 24px 32px;
-    display: flex;
+    display: none;
     flex-direction: column;
     gap: 18px;
+  }
+  .view-pane.active {
+    display: flex;
   }
 
   /* Power Hub Card */
@@ -134,7 +137,7 @@
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
     border-radius: 20px;
-    padding: 30px 24px 22px;
+    padding: 28px 24px 22px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -255,24 +258,89 @@
     color: var(--muted-foreground);
   }
 
-  /* Settings row */
-  .sys-row {
+  /* List & Cards */
+  .row-card {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 12px 18px;
+    border-radius: 12px;
+    padding: 12px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    transition: all 150ms ease;
   }
-  .sys-text {
-    font-size: 13px;
-    font-weight: 600;
+  .row-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: #3584e4;
   }
-  .sys-sub {
+  .badge-proto {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: rgba(53, 132, 228, 0.18);
+    color: #3584e4;
+  }
+  .badge-ping {
+    font-family: monospace;
     font-size: 11px;
-    color: var(--muted-foreground);
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(46, 194, 126, 0.15);
+    color: #2ec27e;
   }
+  .btn-ping-row {
+    background: transparent;
+    border: none;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+  }
+  .btn-ping-row:hover {
+    color: var(--foreground);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  /* Filter pills */
+  .pills-bar {
+    display: flex;
+    gap: 8px;
+  }
+  .pill-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--foreground);
+  }
+  .pill-btn.active {
+    background: #3584e4;
+    border-color: #3584e4;
+    color: #fff;
+  }
+
+  /* Quota bar */
+  .quota-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .quota-bar-fill {
+    width: 42%;
+    height: 100%;
+    background: #3584e4;
+    border-radius: 3px;
+  }
+
+  /* Switch */
   .switch {
     width: 42px;
     height: 24px;
@@ -290,7 +358,6 @@
     border-radius: 50%;
     top: 3px;
     right: 3px;
-    transition: all 150ms ease;
   }
 </style>
 </head>
@@ -306,23 +373,23 @@
         <span class="badge-ver">v1.0</span>
       </div>
       <nav class="nav-menu">
-        <div class="nav-item active">
+        <div class="nav-item active" onclick="switchTab('dash', this)">
           <span>📊</span>
           <span>Dashboard</span>
         </div>
-        <div class="nav-item">
+        <div class="nav-item" onclick="switchTab('servers', this)">
           <span>🌐</span>
           <span>Servers</span>
         </div>
-        <div class="nav-item">
+        <div class="nav-item" onclick="switchTab('subs', this)">
           <span>📥</span>
           <span>Subscriptions</span>
         </div>
-        <div class="nav-item">
+        <div class="nav-item" onclick="switchTab('routing', this)">
           <span>🔀</span>
           <span>Routing</span>
         </div>
-        <div class="nav-item">
+        <div class="nav-item" onclick="switchTab('settings', this)">
           <span>⚙️</span>
           <span>Settings</span>
         </div>
@@ -339,12 +406,12 @@
   <!-- Right Content Area -->
   <main class="content">
     <div class="header-bar">
-      <div class="page-title">Dashboard</div>
-      <div style="font-size: 12px; opacity: 0.6;">System Proxy: Active</div>
+      <div id="headerTitle" class="page-title">Dashboard</div>
+      <div style="font-size: 12px; opacity: 0.6;">SOCKS: 10808 • HTTP: 10809</div>
     </div>
 
-    <div class="main-dash">
-      <!-- Power Hub Card -->
+    <!-- 1. DASHBOARD VIEW -->
+    <div id="view-dash" class="view-pane active">
       <div class="power-hub">
         <div id="statusBadge" class="status-badge disconnected">DISCONNECTED</div>
 
@@ -360,11 +427,10 @@
             <div class="server-title">Frankfurt 01 (Fast)</div>
             <div id="serverSub" class="server-sub">Click button to establish tunnel</div>
           </div>
-          <span style="font-size: 10px; font-weight: 800; background: rgba(53,132,228,0.2); color: #3584e4; padding: 3px 6px; border-radius: 4px; margin-left: 8px;">VLESS</span>
+          <span class="badge-proto">VLESS-REALITY</span>
         </div>
       </div>
 
-      <!-- Telemetry Cards -->
       <div class="telemetry-row">
         <div class="telemetry-card">
           <div class="telemetry-header">
@@ -385,13 +451,150 @@
         </div>
       </div>
 
-      <!-- System Integration -->
-      <div class="sys-row">
+      <div class="row-card">
         <div>
-          <div class="sys-text">GNOME Desktop System Proxy</div>
-          <div class="sys-sub">Automatically configure SOCKS5 (10808) & HTTP (10809)</div>
+          <div style="font-size: 13px; font-weight: 600;">GNOME Desktop System Proxy</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">Automatically forward desktop HTTP & SOCKS traffic on connect</div>
         </div>
         <div class="switch"></div>
+      </div>
+    </div>
+
+    <!-- 2. SERVERS VIEW -->
+    <div id="view-servers" class="view-pane">
+      <div style="display: flex; gap: 10px;">
+        <input type="text" placeholder="Search servers by name or address..." style="flex: 1; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--foreground);" />
+        <button onclick="pingAll()" style="padding: 8px 16px; border-radius: 8px; background: #3584e4; color: #fff; border: none; font-weight: 700; cursor: pointer;">⚡ Test All</button>
+      </div>
+
+      <div class="pills-bar">
+        <div class="pill-btn active">All (3)</div>
+        <div class="pill-btn">VLESS</div>
+        <div class="pill-btn">VMess</div>
+        <div class="pill-btn">Trojan</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="row-card">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <input type="radio" name="srv" checked />
+            <span class="badge-proto">VLESS</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Frankfurt 01 (Fast)</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">1.1.1.1:443 • Reality</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="p1" class="badge-ping">142 ms</span>
+            <button class="btn-ping-row" onclick="pingOne('p1')">🔄</button>
+          </div>
+        </div>
+
+        <div class="row-card">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <input type="radio" name="srv" />
+            <span class="badge-proto">VLESS</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Amsterdam 02 (Premium)</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">8.8.8.8:443 • Reality</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="p2" class="badge-ping">185 ms</span>
+            <button class="btn-ping-row" onclick="pingOne('p2')">🔄</button>
+          </div>
+        </div>
+
+        <div class="row-card">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <input type="radio" name="srv" />
+            <span class="badge-proto" style="color: #9141ac; background: rgba(145,65,172,0.18);">VMESS</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Helsinki 03 (CDN-WS)</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">9.9.9.9:8080 • WS+TLS</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="p3" class="badge-ping">264 ms</span>
+            <button class="btn-ping-row" onclick="pingOne('p3')">🔄</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. SUBSCRIPTIONS VIEW -->
+    <div id="view-subs" class="view-pane">
+      <div style="display: flex; gap: 10px;">
+        <input type="text" placeholder="https://provider.com/api/v1/client/subscribe?token=..." style="flex: 1; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--foreground);" />
+        <button style="padding: 8px 16px; border-radius: 8px; background: #3584e4; color: #fff; border: none; font-weight: 700; cursor: pointer;">+ Add & Fetch</button>
+      </div>
+
+      <div class="row-card" style="flex-direction: column; align-items: stretch; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 14px; font-weight: 700;">Frankfurt VIP Highway</div>
+            <div style="font-size: 11px; color: var(--muted-foreground);">3 servers • Updated 5 mins ago</div>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn-ping-row">🔄 Refresh</button>
+            <button class="btn-ping-row" style="color: #e01b24;">🗑 Remove</button>
+          </div>
+        </div>
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground);">
+            <span>Traffic Quota: 42.0 GB / 100.0 GB</span>
+            <span>42%</span>
+          </div>
+          <div class="quota-bar-bg">
+            <div class="quota-bar-fill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. ROUTING VIEW -->
+    <div id="view-routing" class="view-pane">
+      <div class="row-card">
+        <div>
+          <div style="font-size: 13px; font-weight: 700;">Bypass Iran (.ir) & Private LAN</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">Directly connect domestic services (geoip:ir / geosite:category-ir)</div>
+        </div>
+        <div class="switch"></div>
+      </div>
+
+      <div class="row-card">
+        <div>
+          <div style="font-size: 13px; font-weight: 700;">Block Ads & Trackers</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">Sinkhole malicious domains and tracking beacons (geosite:category-ads-all)</div>
+        </div>
+        <div class="switch"></div>
+      </div>
+    </div>
+
+    <!-- 5. SETTINGS VIEW -->
+    <div id="view-settings" class="view-pane">
+      <div class="row-card">
+        <div>
+          <div style="font-size: 13px; font-weight: 700;">Proxy Engine</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">Detected: /usr/bin/xray (Version 26.3.27)</div>
+        </div>
+        <span class="badge-ping" style="background: rgba(46,194,126,0.15); color: #2ec27e;">Active: Xray-Core</span>
+      </div>
+
+      <div class="row-card">
+        <div>
+          <div style="font-size: 13px; font-weight: 700;">Local Listener Ports</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">SOCKS5 Port: 10808 • HTTP Proxy Port: 10809</div>
+        </div>
+        <button class="btn-ping-row">⚙ Edit</button>
+      </div>
+
+      <div class="row-card">
+        <div>
+          <div style="font-size: 13px; font-weight: 700;">Theme Appearance</div>
+          <div style="font-size: 11px; color: var(--muted-foreground);">Respects GNOME System Theme (Dark/Light) via AdwStyleManager</div>
+        </div>
+        <span style="font-size: 12px; opacity: 0.7;">System Default ▾</span>
       </div>
     </div>
   </main>
@@ -411,9 +614,9 @@
       btn.className = "power-btn connected";
       badge.className = "status-badge connected";
       badge.textContent = "SECURE & CONNECTED";
-      sub.textContent = "Tunnel active • 142 ms RTT";
-      down.textContent = "5.24 MB/s";
-      up.textContent = "384 KB/s";
+      sub.textContent = "Active tunnel • 142 ms";
+      down.textContent = "4.82 MB/s";
+      up.textContent = "320 KB/s";
     } else {
       btn.className = "power-btn disconnected";
       badge.className = "status-badge disconnected";
@@ -422,6 +625,36 @@
       down.textContent = "0.00 KB/s";
       up.textContent = "0.00 KB/s";
     }
+  }
+
+  function switchTab(name, elem) {
+    document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+    elem.classList.add("active");
+
+    document.querySelectorAll(".view-pane").forEach(el => el.classList.remove("active"));
+    document.getElementById("view-" + name).classList.add("active");
+
+    const titles = {
+      dash: "Dashboard",
+      servers: "Servers & Nodes",
+      subs: "Subscriptions",
+      routing: "Routing Rules",
+      settings: "Settings"
+    };
+    document.getElementById("headerTitle").textContent = titles[name];
+  }
+
+  function pingOne(id) {
+    const el = document.getElementById(id);
+    el.textContent = "...";
+    setTimeout(() => {
+      const ms = Math.floor(110 + Math.random() * 80);
+      el.textContent = ms + " ms";
+    }, 400);
+  }
+
+  function pingAll() {
+    ['p1', 'p2', 'p3'].forEach(id => pingOne(id));
   }
 </script>
 

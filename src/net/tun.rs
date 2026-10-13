@@ -181,6 +181,60 @@ pub fn revert_setup(binary: &Path) -> Result<(), String> {
     }
 }
 
+/// Applies system routing table rules to direct OS traffic into the TUN interface.
+pub fn apply_tun_routes(interface: &str, server_host: &str) -> Result<(), String> {
+    let script_path = crate::core::persist::config_dir()
+        .map(|d| d.join("tun-helper.sh"))
+        .unwrap_or_else(|| PathBuf::from("/home/ehsan/.config/xdelta/tun-helper.sh"));
+
+    if !script_path.exists() {
+        return Err("tun-helper.sh not found".to_string());
+    }
+
+    let output = Command::new("pkexec")
+        .args([
+            script_path.to_str().unwrap_or(""),
+            "up",
+            interface,
+            server_host,
+        ])
+        .output()
+        .map_err(|e| format!("could not invoke tun helper: {e}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let err = String::from_utf8_lossy(&output.stderr);
+        Err(if err.trim().is_empty() {
+            "permission denied or cancelled".to_string()
+        } else {
+            err.trim().to_string()
+        })
+    }
+}
+
+/// Removes system routing rules installed for the TUN interface.
+pub fn revert_tun_routes(interface: &str, server_host: &str) -> Result<(), String> {
+    let script_path = crate::core::persist::config_dir()
+        .map(|d| d.join("tun-helper.sh"))
+        .unwrap_or_else(|| PathBuf::from("/home/ehsan/.config/xdelta/tun-helper.sh"));
+
+    if !script_path.exists() {
+        return Ok(());
+    }
+
+    let _ = Command::new("pkexec")
+        .args([
+            script_path.to_str().unwrap_or(""),
+            "down",
+            interface,
+            server_host,
+        ])
+        .output();
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

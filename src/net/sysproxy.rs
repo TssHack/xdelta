@@ -16,6 +16,7 @@ use gio::Settings;
 const SCHEMA_PROXY: &str = "org.gnome.system.proxy";
 const SCHEMA_HTTP: &str = "org.gnome.system.proxy.http";
 const SCHEMA_HTTPS: &str = "org.gnome.system.proxy.https";
+const SCHEMA_FTP: &str = "org.gnome.system.proxy.ftp";
 const SCHEMA_SOCKS: &str = "org.gnome.system.proxy.socks";
 
 /// Ranges that must never be sent through the proxy.
@@ -107,6 +108,7 @@ impl GnomeProxyManager {
         let proxy = Self::settings(SCHEMA_PROXY);
         let http = Self::settings(SCHEMA_HTTP);
         let https = Self::settings(SCHEMA_HTTPS);
+        let ftp = Self::settings(SCHEMA_FTP);
         let socks = Self::settings(SCHEMA_SOCKS);
 
         http.set_string("host", "127.0.0.1")
@@ -122,6 +124,9 @@ impl GnomeProxyManager {
         https
             .set_int("port", http_port as i32)
             .map_err(|e| e.to_string())?;
+
+        let _ = ftp.set_string("host", "127.0.0.1");
+        let _ = ftp.set_int("port", http_port as i32);
 
         socks
             .set_string("host", "127.0.0.1")
@@ -153,10 +158,9 @@ impl GnomeProxyManager {
             )
             .map_err(|e| e.to_string())?;
 
-        // SOCKS and HTTP listen separately here, so the desktop must not reuse
-        // one host for both schemes.
+        // Use same proxy for HTTP/HTTPS so browsers reliably direct all traffic
         proxy
-            .set_boolean("use-same-proxy", false)
+            .set_boolean("use-same-proxy", true)
             .map_err(|e| e.to_string())?;
         proxy
             .set_string("mode", "manual")

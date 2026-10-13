@@ -224,12 +224,22 @@ impl ConnectionController {
             }
         }
 
-        // Only now point the desktop at the tunnel; it is known to work.
-        //
-        // System proxy only applies to proxy mode. In TUN mode the device
-        // carries all traffic, so touching the desktop proxy there would route
-        // packets twice.
-        if profile.mode == ConnectionMode::SystemProxy && auto_system_proxy {
+        // In TUN mode, install the system routes so traffic actually flows into xdelta0
+        if profile.mode == ConnectionMode::Tun {
+            if let Err(e) = crate::net::tun::apply_tun_routes("xdelta0", &profile.node.server) {
+                log::warn!("Could not apply TUN system routes: {e}");
+                let msg = format!("TUN routing: {e}");
+                note = Some(match note {
+                    Some(existing) => format!("{existing}; {msg}"),
+                    None => msg,
+                });
+            }
+        }
+
+        // Apply desktop proxy whenever auto_system_proxy is enabled.
+        // This provides an immediate, zero-latency proxy path for web browsers,
+        // Telegram and desktop applications.
+        if auto_system_proxy {
             match GnomeProxyManager::snapshot() {
                 Ok(snapshot) => {
                     self.proxy_snapshot = Some(snapshot);
@@ -281,6 +291,11 @@ impl ConnectionController {
 
         self.state = ConnectionState::Disconnecting;
         let mut problems: Vec<String> = Vec::new();
+
+        // In TUN mode, tear down system routes first
+        if self.active_mode == Some(ConnectionMode::Tun) {
+            let _ = crate::net::tun::revert_tun_routes("xdelta0", "");
+        }
 
         // Restore the desktop first: the core is still alive here, so the
         // window where traffic would hit a dead proxy is as small as possible.

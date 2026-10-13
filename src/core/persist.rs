@@ -106,6 +106,7 @@ pub fn save_appearance(settings: &AppearanceSettings) {
 
     match serde_json::to_string_pretty(settings) {
         Ok(json) => {
+            log::debug!("PERSIST-WRITE {:?} -> {:?}", settings, path);
             if let Err(e) = std::fs::write(&path, json) {
                 log::warn!("Could not write settings to {:?}: {}", path, e);
             }

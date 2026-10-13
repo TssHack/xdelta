@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod icons;
 pub mod routing;
 pub mod servers;
 pub mod settings;

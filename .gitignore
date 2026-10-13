@@ -1,3 +1,7 @@
 /target
 *.swp
 *.bak
+
+# Tooling scratch: background task logs and throwaway probes.
+.zwork/
+examples/

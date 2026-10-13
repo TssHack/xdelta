@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Sidebar toggle: panel outline with a divider marking the sidebar column. -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+    <rect x="2.75" y="3" width="10.5" height="10" rx="1.6" />
+    <path d="M 6.6 3 L 6.6 13" />
+  </g>
+</svg>

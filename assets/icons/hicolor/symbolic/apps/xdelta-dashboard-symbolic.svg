@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Dashboard gauge: semicircular arc with a needle and pivot. -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <path d="M 2 11.5 A 6 6 0 0 1 14 11.5" />
+    <path d="M 8 11.5 L 11.1 7.4" />
+  </g>
+  <circle cx="8" cy="11.5" r="1.4" fill="currentColor" />
+</svg>

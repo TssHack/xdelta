@@ -94,10 +94,10 @@ impl MainWindow {
             .build();
         nav_list.add_css_class("sidebar-nav-list");
 
-        let dash_row = Self::create_nav_row("speedometer-symbolic", "Dashboard");
+        let dash_row = Self::create_nav_row("xdelta-dashboard-symbolic", "Dashboard");
         let servers_row = Self::create_nav_row("network-server-symbolic", "Servers");
         let subs_row = Self::create_nav_row("folder-download-symbolic", "Subscriptions");
-        let routing_row = Self::create_nav_row("route-symbolic", "Routing");
+        let routing_row = Self::create_nav_row("xdelta-routing-symbolic", "Routing");
         let settings_row = Self::create_nav_row("preferences-system-symbolic", "Settings");
 
         nav_list.append(&dash_row);
@@ -144,7 +144,7 @@ impl MainWindow {
 
         // Responsive Sidebar Toggle Button (active in narrow / collapsed mode)
         let sidebar_toggle_btn = Button::builder()
-            .icon_name("view-sidebar-symbolic")
+            .icon_name("xdelta-sidebar-symbolic")
             .tooltip_text("Toggle Navigation")
             .visible(false) // Initially hidden on wide desktop
             .build();
@@ -196,7 +196,7 @@ impl MainWindow {
 
         let dash_page =
             view_stack.add_titled(&dashboard_view.container, Some("dashboard"), "Dashboard");
-        dash_page.set_icon_name(Some("xdelta-symbolic"));
+        dash_page.set_icon_name(Some("xdelta-dashboard-symbolic"));
 
         let srv_page = view_stack.add_titled(&servers_view.container, Some("servers"), "Servers");
         srv_page.set_icon_name(Some("network-server-symbolic"));
@@ -209,7 +209,7 @@ impl MainWindow {
         subs_page.set_icon_name(Some("xdelta-symbolic"));
 
         let route_page = view_stack.add_titled(&routing_view.container, Some("routing"), "Routing");
-        route_page.set_icon_name(Some("route-symbolic"));
+        route_page.set_icon_name(Some("xdelta-routing-symbolic"));
 
         let sett_page =
             view_stack.add_titled(&settings_view.container, Some("settings"), "Settings");

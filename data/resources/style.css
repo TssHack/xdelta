@@ -363,7 +363,6 @@
   border: 2px solid transparent;
   background: none;
   box-shadow: none;
-  overflow: hidden;
 }
 
 .wallpaper-thumb:hover {
@@ -377,27 +376,5 @@
   box-shadow: 0 0 0 1px var(--accent-bg-color, var(--xdelta-brand));
 }
 
-/* --------------------------------------------------------------------------
-   Responsive Layout & Breakpoint Enhancements
-   -------------------------------------------------------------------------- */
-@media (max-width: 720px) {
-  .power-btn {
-    min-width: 120px;
-    min-height: 120px;
-    border-radius: 60px;
-  }
-  
-  .power-icon-large {
-    -gtk-icon-size: 46px;
-  }
-  
-  .power-hub-card {
-    padding: 24px 16px 20px 16px;
-    border-radius: 18px;
-  }
 
-  .telemetry-speed {
-    font-size: 13pt;
-  }
-}
 

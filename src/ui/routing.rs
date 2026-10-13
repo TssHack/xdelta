@@ -39,7 +39,7 @@ impl RoutingView {
             .model(&modes)
             .selected(0)
             .build();
-        routing_mode_row.add_prefix(&gtk4::Image::from_icon_name("route-symbolic"));
+        routing_mode_row.add_prefix(&gtk4::Image::from_icon_name("xdelta-routing-symbolic"));
 
         mode_group.add(&routing_mode_row);
 

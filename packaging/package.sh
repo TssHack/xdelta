@@ -42,6 +42,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+mkdir -p "${DIST_DIR}"
+DIST_DIR="$(cd "${DIST_DIR}" && pwd)"
+
+if [[ -f "${BINARY_PATH}" ]]; then
+    BINARY_PATH="$(cd "$(dirname "${BINARY_PATH}")" && pwd)/$(basename "${BINARY_PATH}")"
+fi
+
 if [[ -z "${VERSION}" ]]; then
     VERSION=$(grep -m1 '^version = ' "${PROJECT_ROOT}/Cargo.toml" | cut -d '"' -f2)
 fi

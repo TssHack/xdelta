@@ -34,6 +34,12 @@ impl TransitionOutcome {
     }
 }
 
+/// How often a live connection is re-confirmed to carry traffic.
+///
+/// Frequent enough to notice a drop quickly, rare enough that the check itself
+/// is not a traffic source of its own.
+const HEALTH_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// Owns the running core process and the state needed to tear it down cleanly.
 pub struct ConnectionController {
     state: ConnectionState,
@@ -43,6 +49,16 @@ pub struct ConnectionController {
     /// Mode of the connection that is currently up.
     active_mode: Option<ConnectionMode>,
     api_port: u16,
+    /// Local SOCKS port of the live connection, used by health checks.
+    socks_port: u16,
+    /// Local HTTP port of the live connection.
+    ///
+    /// Tracked separately because browsers configured for the desktop proxy use
+    /// this port, not the SOCKS one; checking only SOCKS could declare a healthy
+    /// browser session dead.
+    http_port: u16,
+    /// When the last health check ran.
+    last_health_check: Option<std::time::Instant>,
     sampler: TrafficSampler,
     config_path: Option<PathBuf>,
 }
@@ -61,6 +77,9 @@ impl ConnectionController {
             proxy_snapshot: None,
             active_mode: None,
             api_port: crate::core::session::DEFAULT_API_PORT,
+            socks_port: crate::core::session::DEFAULT_SOCKS_PORT,
+            http_port: crate::core::session::DEFAULT_HTTP_PORT,
+            last_health_check: None,
             sampler: TrafficSampler::new(),
             config_path: None,
         }
@@ -102,6 +121,14 @@ impl ConnectionController {
                 "a connection is already in progress",
             );
         }
+
+        log::info!(
+            "connecting: {} {}:{} via {}",
+            profile.node.protocol.as_str(),
+            profile.node.server,
+            profile.node.port,
+            profile.mode.label()
+        );
 
         self.state = ConnectionState::Connecting;
 
@@ -162,11 +189,43 @@ impl ConnectionController {
         self.process = Some(process);
         self.config_path = Some(path);
         self.api_port = profile.api_port;
+        self.socks_port = profile.socks_port;
+        self.http_port = profile.http_port;
         self.active_mode = Some(profile.mode);
         self.sampler.reset();
+        self.last_health_check = None;
 
         let mut note = None;
 
+        // Verify the tunnel BEFORE touching the desktop proxy.
+        //
+        // Order matters here, and getting it wrong was a real bug: `curl`
+        // honours the desktop proxy settings in addition to `-x`. Once the
+        // system proxy pointed at our own listener, the check's traffic was
+        // routed back into the proxy it was testing, failed instantly, and the
+        // connection was then torn down as if the server were dead. The
+        // listener exists either way, so checking first avoids the loop.
+        if profile.mode == ConnectionMode::SystemProxy {
+            match crate::net::probe::verify_connection(
+                profile.socks_port,
+                std::time::Duration::from_secs(10),
+            ) {
+                Ok(latency) => {
+                    note = Some(format!("verified in {latency} ms"));
+                }
+                Err(e) => {
+                    // The core is up but carries nothing. That is a failed
+                    // connection, so everything this attempt changed is undone
+                    // rather than leaving the user with a half-applied state.
+                    self.teardown_after_failed_verification();
+                    self.state = ConnectionState::Failed(format!("server not working: {e}"));
+                    return TransitionOutcome::with_note(self.state.clone(), e);
+                }
+            }
+        }
+
+        // Only now point the desktop at the tunnel; it is known to work.
+        //
         // System proxy only applies to proxy mode. In TUN mode the device
         // carries all traffic, so touching the desktop proxy there would route
         // packets twice.
@@ -176,18 +235,34 @@ impl ConnectionController {
                     self.proxy_snapshot = Some(snapshot);
                     if let Err(e) = GnomeProxyManager::enable(profile.http_port, profile.socks_port)
                     {
-                        // The tunnel itself is up, so this is a partial success:
-                        // stay connected but say the desktop proxy did not apply.
-                        note = Some(format!("Core running, but system proxy failed: {e}"));
+                        // The tunnel itself works, so this is a partial success:
+                        // stay connected but report that the desktop proxy did
+                        // not apply.
+                        let msg = format!("system proxy not applied: {e}");
+                        note = Some(match note {
+                            Some(existing) => format!("{existing}; {msg}"),
+                            None => msg,
+                        });
                     }
                 }
                 Err(e) => {
-                    note = Some(format!("Core running, but system proxy failed: {e}"));
+                    let msg = format!("system proxy not applied: {e}");
+                    note = Some(match note {
+                        Some(existing) => format!("{existing}; {msg}"),
+                        None => msg,
+                    });
                 }
             }
         }
 
         self.state = ConnectionState::Connected;
+
+        log::info!(
+            "connected: {} ({})",
+            profile.node.name,
+            note.as_deref().unwrap_or("no note")
+        );
+
         match note {
             Some(note) => TransitionOutcome::with_note(self.state.clone(), note),
             None => TransitionOutcome::ok(self.state.clone()),
@@ -240,6 +315,18 @@ impl ConnectionController {
         }
     }
 
+    /// Undoes everything a failed connection attempt changed.
+    ///
+    /// Reuses the ordinary disconnect path so there is exactly one place that
+    /// knows how to stop the core, restore the desktop proxy and remove the
+    /// temporary config. Duplicating that logic here would let the two drift.
+    fn teardown_after_failed_verification(&mut self) {
+        let outcome = self.disconnect();
+        if let Some(note) = outcome.note {
+            log::warn!("cleanup after a failed connection reported: {}", note);
+        }
+    }
+
     /// Polls live traffic counters while connected.
     pub fn poll_traffic(&mut self) -> Option<(TrafficRates, TrafficCounters)> {
         if !matches!(self.state, ConnectionState::Connected) {
@@ -260,6 +347,115 @@ impl ConnectionController {
         match self.process.as_mut() {
             Some(process) => process.is_running(),
             None => false,
+        }
+    }
+
+    /// Recent output from the core, for diagnosing a drop.
+    pub fn core_output_tail(&self) -> Vec<String> {
+        match self.process.as_ref() {
+            Some(process) => process.recent_output(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Whether it is time to confirm the tunnel still carries traffic.
+    ///
+    /// A started connection can stop forwarding at any moment: most servers in
+    /// the bundled subscription are unstable, and a core can also be alive while
+    /// its listener is unusable. Without a periodic check, such a connection
+    /// stays displayed as healthy forever, which is exactly the "connects then
+    /// silently stops" behaviour.
+    pub fn should_recheck_health(&self) -> bool {
+        if !matches!(self.state, ConnectionState::Connected) {
+            return false;
+        }
+
+        // Only proxy mode has a local listener that can be checked without
+        // touching the host's own routing.
+        if self.active_mode != Some(ConnectionMode::SystemProxy) {
+            return false;
+        }
+
+        match self.last_health_check {
+            Some(at) => at.elapsed() >= HEALTH_CHECK_INTERVAL,
+            None => true,
+        }
+    }
+
+    /// Runs the periodic connectivity check across every local listener.
+    ///
+    /// All listeners are checked, not one. Applications differ in which they
+    /// use: a browser configured for the desktop proxy takes the HTTP port, while
+    /// the SOCKS port serves anything speaking SOCKS. Checking only SOCKS meant a
+    /// perfectly healthy browser session could be declared dead and torn down.
+    ///
+    /// Returns `Ok(None)` when no check was due, so the caller can distinguish
+    /// "nothing to do" from "checked and fine".
+    pub fn recheck_health(&mut self) -> Result<Option<u32>, String> {
+        if !self.should_recheck_health() {
+            return Ok(None);
+        }
+
+        self.last_health_check = Some(std::time::Instant::now());
+
+        let mut failures: Vec<String> = Vec::new();
+        let mut best: Option<u32> = None;
+
+        for (label, port, via_http) in [
+            ("SOCKS", self.socks_port, false),
+            ("HTTP", self.http_port, true),
+        ] {
+            let result = if via_http {
+                crate::net::probe::verify_connection_via_http(
+                    port,
+                    std::time::Duration::from_secs(8),
+                )
+            } else {
+                crate::net::probe::verify_connection(port, std::time::Duration::from_secs(8))
+            };
+
+            match result {
+                Ok(latency) => best = Some(best.map_or(latency, |b: u32| b.min(latency))),
+                Err(e) => failures.push(format!("{label}: {e}")),
+            }
+        }
+
+        // A connection is only unhealthy when every listener fails. One working
+        // listener is enough for the connection to be useful, and a single
+        // failure is reported without claiming the tunnel is broken.
+        if failures.len() == 2 {
+            return Err(failures.join("; "));
+        }
+
+        if !failures.is_empty() {
+            log::debug!("health check: partial failure ({})", failures.join("; "));
+        }
+
+        Ok(best)
+    }
+
+    /// Reports that traffic stopped flowing, without tearing the connection down.
+    ///
+    /// Deliberately does NOT disconnect: the core is still running and a single
+    /// failed probe is weak evidence. Applications also retry on their own, and
+    /// killing the tunnel mid-retry guarantees the failure the user sees. The
+    /// state is surfaced so the UI can say something is wrong, and the user
+    /// decides whether to reconnect.
+    pub fn note_connection_degraded(&mut self, reason: &str) -> TransitionOutcome {
+        log::warn!("connectivity check failed but the connection is kept up: {reason}");
+        TransitionOutcome::with_note(self.state.clone(), format!("degraded: {reason}"))
+    }
+
+    /// Every proxy port a client might be pointed at.
+    ///
+    /// Used by the settings page to describe which ports are being served.
+    pub fn served_ports(&self) -> Vec<(&'static str, u16)> {
+        match self.active_mode {
+            Some(ConnectionMode::SystemProxy) => {
+                vec![("SOCKS", self.socks_port), ("HTTP", self.http_port)]
+            }
+            Some(ConnectionMode::Tun) => vec![],
+            None => vec![],
         }
     }
 

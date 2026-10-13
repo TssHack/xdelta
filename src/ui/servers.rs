@@ -184,7 +184,7 @@ impl ServersView {
         for node in nodes {
             let row = ActionRow::builder()
                 .title(&node.name)
-                .subtitle(&format!("{}:{}", node.server, node.port))
+                .subtitle(format!("{}:{}", node.server, node.port))
                 .activatable(true)
                 .build();
             row.add_css_class("server-row");

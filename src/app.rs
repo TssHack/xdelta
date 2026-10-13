@@ -379,6 +379,9 @@ impl App {
         // Periodic tick: refresh live traffic and notice a core that died.
         let controller = controller.clone();
         let view = main_window.dashboard_view.clone();
+        // Tracked so a connection drop is reported once, not on every tick.
+        let was_connected = Rc::new(std::cell::Cell::new(false));
+        let last_stats_ok = Rc::new(std::cell::Cell::new(true));
 
         glib::timeout_add_local(TRAFFIC_POLL_INTERVAL, move || {
             let mut ctl = controller.borrow_mut();
@@ -386,7 +389,22 @@ impl App {
             // Live traffic is polled only while a connection is up; the core is
             // not running otherwise, so there is nothing to sample.
             if matches!(ctl.state(), crate::core::ConnectionState::Connected) {
+                was_connected.set(true);
+
                 if !ctl.is_core_alive() {
+                    // The core died while we believed it was connected. Its last
+                    // output lines explain why, and they are logged here because
+                    // this is the only place that observes the transition.
+                    let tail = ctl.core_output_tail();
+                    log::error!(
+                        "core died while connected; last output:\n  {}",
+                        if tail.is_empty() {
+                            "(no output captured)".to_string()
+                        } else {
+                            tail.join("\n  ")
+                        }
+                    );
+
                     let outcome = ctl.note_core_died();
                     view.render_outcome(&outcome);
                     view.set_active_mode(None);
@@ -394,9 +412,48 @@ impl App {
                     return glib::ControlFlow::Continue;
                 }
 
-                if let Some((rates, totals)) = ctl.poll_traffic() {
-                    view.render_traffic(rates, totals);
+                match ctl.poll_traffic() {
+                    Some((rates, totals)) => {
+                        if !last_stats_ok.get() {
+                            log::info!("traffic statistics are available again");
+                            last_stats_ok.set(true);
+                        }
+                        view.render_traffic(rates, totals);
+                    }
+                    None => {
+                        // Statistics failing while the process is alive usually
+                        // means the API listener stopped answering, which is worth
+                        // one warning rather than silence.
+                        if last_stats_ok.get() {
+                            log::warn!(
+                                "traffic statistics unavailable; the core is alive but the API port is not answering"
+                            );
+                            last_stats_ok.set(false);
+                        }
+                    }
                 }
+
+                // While connected, confirm the tunnel still carries traffic.
+                // This is what turns a silent drop into a visible error: without
+                // it, a server that stops forwarding leaves the UI claiming a
+                // healthy connection indefinitely.
+                if ctl.should_recheck_health() {
+                    match ctl.recheck_health() {
+                        Ok(Some(latency)) => {
+                            log::debug!("health check passed ({latency} ms)");
+                        }
+                        Ok(None) => {}
+                        Err(reason) => {
+                            log::warn!("connection health check failed: {reason}");
+                            let outcome = ctl.note_connection_degraded(&reason);
+                            view.render_outcome(&outcome);
+                            view.set_active_mode(None);
+                            view.clear_traffic();
+                        }
+                    }
+                }
+            } else if was_connected.replace(false) {
+                log::info!("connection is no longer active; polling stopped");
             }
 
             glib::ControlFlow::Continue

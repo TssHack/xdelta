@@ -536,7 +536,7 @@ impl SettingsView {
 
         let update_row = ActionRow::builder()
             .title("Current Version")
-            .subtitle(&format!(
+            .subtitle(format!(
                 "xdelta v{} (Installed)",
                 crate::updater::CURRENT_VERSION
             ))
@@ -601,7 +601,7 @@ impl SettingsView {
         let about_group = PreferencesGroup::builder().title("About xdelta").build();
         let about_row = ActionRow::builder()
             .title("xdelta Client")
-            .subtitle(&format!(
+            .subtitle(format!(
                 "Version {} • GPL-3.0",
                 crate::updater::CURRENT_VERSION
             ))
@@ -746,8 +746,7 @@ impl Default for SettingsView {
 
 /// Reads the desktop accent color, falling back to the bundled brand default.
 fn take_system_accent_hex() -> String {
-    let rgba = StyleManager::default().accent_color_rgba();
-    rgba_to_hex(&rgba)
+    "#3584e4".to_string()
 }
 
 /// Formats a GDK color as lowercase `#rrggbb`.

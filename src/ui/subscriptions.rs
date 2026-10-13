@@ -164,7 +164,7 @@ impl SubscriptionsView {
         for sub in subs {
             let row = ExpanderRow::builder()
                 .title(&sub.name)
-                .subtitle(&format!("{} nodes • Active", sub.node_count))
+                .subtitle(format!("{} nodes • Active", sub.node_count))
                 .build();
             row.add_prefix(&gtk4::Image::from_icon_name("folder-download-symbolic"));
 
@@ -179,7 +179,7 @@ impl SubscriptionsView {
                 .build();
 
             let url_lbl = Label::builder()
-                .label(&format!("Endpoint: {}", sub.url))
+                .label(format!("Endpoint: {}", sub.url))
                 .halign(Align::Start)
                 .ellipsize(gtk4::pango::EllipsizeMode::End)
                 .build();
@@ -197,7 +197,7 @@ impl SubscriptionsView {
                 };
 
                 let quota_label = Label::builder()
-                    .label(&format!(
+                    .label(format!(
                         "Data Usage: {:.1} GB / {:.1} GB ({:.0}%)",
                         used_gb,
                         total_gb,

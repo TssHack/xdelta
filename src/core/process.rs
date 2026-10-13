@@ -1,13 +1,44 @@
-use std::io::{BufRead, BufReader};
+//! Core process lifecycle and output handling.
+//!
+//! Two responsibilities, both with a subtle failure mode worth stating:
+//!
+//! * **Starting and stopping** the core binary.
+//! * **Draining its output continuously.** This is not optional. The core writes
+//!   a log line per connection, and a pipe has finite capacity (64 KiB by
+//!   default, 1 MiB here). If nothing reads the pipe, the core eventually blocks
+//!   inside `write()`, which stalls every forwarded connection: the tunnel stays
+//!   "connected" while passing no traffic. Measured: 60 requests already queued
+//!   46 KB of unread output, so a session of ordinary browsing fills the buffer.
+//!
+//! The output is therefore drained on a dedicated thread for the whole lifetime
+//! of the process, and the tail is kept in a ring buffer so a startup failure
+//! can still be explained after the fact.
+
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// How many recent output lines are kept for diagnostics.
+///
+/// Bounded so a long-running session cannot grow memory without limit; the tail
+/// is what matters when something goes wrong.
+const OUTPUT_HISTORY_LINES: usize = 200;
+
+/// Shared tail of the core's output, for error messages and debugging.
+pub type OutputHistory = Arc<Mutex<VecDeque<String>>>;
 
 pub struct CoreProcessManager {
     child: Option<Child>,
     pub binary_path: PathBuf,
+    /// Recent output from the core, most recent last.
+    history: OutputHistory,
+    /// Set to stop the drain threads when the process is reaped.
+    shutting_down: Arc<AtomicBool>,
 }
 
 impl CoreProcessManager {
@@ -31,7 +62,13 @@ impl CoreProcessManager {
     pub fn start(config_path: &Path) -> Result<Self, String> {
         let binary_path = Self::find_xray_binary()?;
 
-        let child = Command::new(&binary_path)
+        log::info!(
+            "starting core: {} run -c {}",
+            binary_path.display(),
+            config_path.display()
+        );
+
+        let mut child = Command::new(&binary_path)
             .arg("run")
             .arg("-c")
             .arg(config_path)
@@ -40,95 +77,134 @@ impl CoreProcessManager {
             .spawn()
             .map_err(|e| format!("Failed to spawn xray process: {}", e))?;
 
+        let history: OutputHistory = Arc::new(Mutex::new(VecDeque::new()));
+        let shutting_down = Arc::new(AtomicBool::new(false));
+
+        // Drain both pipes for the whole life of the process. Reading only until
+        // the core reports readiness (the previous behaviour) left the pipes
+        // unread afterwards, which eventually blocks the core and silently stops
+        // all traffic.
+        if let Some(stdout) = child.stdout.take() {
+            Self::spawn_drain(stdout, history.clone(), "core", shutting_down.clone());
+        }
+        if let Some(stderr) = child.stderr.take() {
+            Self::spawn_drain(stderr, history.clone(), "core", shutting_down.clone());
+        }
+
         Ok(Self {
             child: Some(child),
             binary_path,
+            history,
+            shutting_down,
         })
+    }
+
+    /// Starts a thread that reads one stream until it closes.
+    fn spawn_drain<R: Read + Send + 'static>(
+        stream: R,
+        history: OutputHistory,
+        label: &'static str,
+        shutting_down: Arc<AtomicBool>,
+    ) {
+        thread::spawn(move || {
+            let reader = BufReader::new(stream);
+
+            for line in reader.lines() {
+                if shutting_down.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                match line {
+                    Ok(line) => {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+
+                        // Forward the core's own log lines into the application
+                        // log, so a single file tells the whole story.
+                        log::debug!("[{label}] {trimmed}");
+
+                        if let Ok(mut h) = history.lock() {
+                            if h.len() == OUTPUT_HISTORY_LINES {
+                                h.pop_front();
+                            }
+                            h.push_back(trimmed.to_string());
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            log::debug!("[{label}] output stream closed");
+        });
+    }
+
+    /// A snapshot of the recent core output, for diagnostics.
+    pub fn recent_output(&self) -> Vec<String> {
+        self.history
+            .lock()
+            .map(|h| h.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Waits until the core reports that it started, or until `timeout`.
     ///
     /// The core prints a `started` line once its listeners are accepting. That
-    /// line is the only reliable readiness signal: without waiting for it, a
-    /// core that exits a moment later (bad config, missing geo assets, PORT in
-    /// use) would be reported as a working connection. A process that exits
-    /// during the wait is reported as an error carrying its own output, which
-    /// is the useful diagnostic.
+    /// line is the only reliable readiness signal: without waiting for it, a core
+    /// that exits a moment later (bad config, missing geo assets, port in use)
+    /// would be reported as a working connection.
+    ///
+    /// The drain threads started in [`Self::start`] keep reading afterwards;
+    /// this function only observes their output.
     pub fn wait_until_ready(&mut self, timeout: Duration) -> Result<(), String> {
-        let child = self.child.as_mut().ok_or("process is not running")?;
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        let (tx, rx) = mpsc::channel::<String>();
-
-        // Drain both pipes on their own threads. The core is chatty, and an
-        // unread pipe would eventually block it once the buffer fills.
-        for stream in [
-            stdout.map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
-            stderr.map(|s| Box::new(s) as Box<dyn std::io::Read + Send>),
-        ] {
-            let Some(stream) = stream else { continue };
-            let tx = tx.clone();
-            thread::spawn(move || {
-                for line in BufReader::new(stream).lines() {
-                    match line {
-                        Ok(line) => {
-                            if tx.send(line).is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
-                    }
-                }
-            });
-        }
-        drop(tx);
-
         let deadline = Instant::now() + timeout;
-        let mut captured: Vec<String> = Vec::new();
-        let mut ready = false;
+        let mut saw_readiness = false;
 
         while Instant::now() < deadline {
-            match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(line) => {
-                    // The core logs a line containing "started" when ready.
-                    if line.contains("started") && !line.contains("Failed") {
-                        ready = true;
-                        captured.push(line);
-                        break;
+            // A process that exited cannot become ready.
+            if let Some(child) = self.child.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let tail = self.recent_output();
+                        return Err(Self::describe_exit(&tail, Some(status)));
                     }
-                    // A failure line is definitive; no point waiting further.
-                    if line.contains("Failed to start") || line.contains("failed to start") {
-                        captured.push(line);
-                        break;
-                    }
-                    captured.push(line);
+                    Ok(None) => {}
+                    Err(e) => return Err(format!("could not query the core process: {e}")),
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // The child may have exited without saying anything.
-                    if let Some(child) = self.child.as_mut() {
-                        if let Ok(Some(status)) = child.try_wait() {
-                            return Err(Self::describe_exit(&captured, Some(status)));
-                        }
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+
+            let tail = self.recent_output();
+
+            if tail.iter().any(|l| l.contains("started")) {
+                saw_readiness = true;
+                break;
+            }
+
+            // A failure line is definitive; no point waiting further.
+            if tail
+                .iter()
+                .any(|l| l.contains("Failed to start") || l.contains("failed to start"))
+            {
+                break;
+            }
+
+            thread::sleep(Duration::from_millis(50));
         }
 
-        if ready {
+        if saw_readiness {
+            log::info!("core reported ready");
             return Ok(());
         }
 
-        // Not ready: either it exited, or it is silent. Both are failures here.
+        let tail = self.recent_output();
         if let Some(child) = self.child.as_mut() {
             if let Ok(Some(status)) = child.try_wait() {
-                return Err(Self::describe_exit(&captured, Some(status)));
+                return Err(Self::describe_exit(&tail, Some(status)));
             }
         }
 
-        Err(Self::describe_exit(&captured, None))
+        Err(Self::describe_exit(&tail, None))
     }
 
     /// Builds an error message from whatever the core managed to print.
@@ -154,6 +230,7 @@ impl CoreProcessManager {
     pub fn stop(&mut self) -> Result<(), String> {
         if let Some(mut child) = self.child.take() {
             let pid = child.id() as i32;
+            log::info!("stopping core (pid {pid})");
 
             // Send SIGTERM using libc
             unsafe {
@@ -163,28 +240,52 @@ impl CoreProcessManager {
             // Wait up to 2 seconds for clean exit
             for _ in 0..20 {
                 match child.try_wait() {
-                    Ok(Some(_status)) => return Ok(()),
+                    Ok(Some(status)) => {
+                        log::info!("core exited cleanly ({status})");
+                        self.shutting_down.store(true, Ordering::Relaxed);
+                        return Ok(());
+                    }
                     Ok(None) => thread::sleep(Duration::from_millis(100)),
                     Err(e) => return Err(format!("Error waiting for process: {}", e)),
                 }
             }
 
             // Force kill if still running
+            log::warn!("core did not exit after SIGTERM; killing it");
             let _ = child.kill();
             let _ = child.wait();
+            self.shutting_down.store(true, Ordering::Relaxed);
         }
         Ok(())
     }
 
+    /// Whether the core process is still alive.
+    ///
+    /// A process that exited is reported with its exit status and its last output
+    /// lines, because "the core died" without a reason is not actionable.
     pub fn is_running(&mut self) -> bool {
         if let Some(child) = &mut self.child {
             match child.try_wait() {
                 Ok(None) => true,
-                _ => false,
+                Ok(Some(status)) => {
+                    let tail = self.recent_output();
+                    let reason = Self::describe_exit(&tail, Some(status));
+                    log::error!("core is no longer running: {reason}");
+                    false
+                }
+                Err(e) => {
+                    log::warn!("could not query the core process: {e}");
+                    false
+                }
             }
         } else {
             false
         }
+    }
+
+    /// The process id, for diagnostics.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
     }
 }
 
@@ -207,5 +308,72 @@ mod which {
             }
         }
         Err(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The core writes far more output than a pipe can hold, so the drain must
+    /// outlive readiness. This checks the ring buffer that makes the output
+    /// observable at all.
+    #[test]
+    fn history_is_bounded() {
+        let history: OutputHistory = Arc::new(Mutex::new(VecDeque::new()));
+
+        for i in 0..(OUTPUT_HISTORY_LINES * 2) {
+            let mut h = history.lock().unwrap();
+            if h.len() == OUTPUT_HISTORY_LINES {
+                h.pop_front();
+            }
+            h.push_back(format!("line {i}"));
+        }
+
+        let h = history.lock().unwrap();
+        assert_eq!(h.len(), OUTPUT_HISTORY_LINES);
+        // The most recent entry is retained; the oldest were dropped.
+        assert_eq!(
+            h.back().unwrap(),
+            &format!("line {}", OUTPUT_HISTORY_LINES * 2 - 1)
+        );
+        assert!(!h.contains(&"line 0".to_string()));
+    }
+
+    #[test]
+    fn recent_output_is_empty_before_start() {
+        let history: OutputHistory = Arc::new(Mutex::new(VecDeque::new()));
+        assert!(history.lock().unwrap().is_empty());
+    }
+
+    /// `describe_exit` must surface the most relevant line, not just the last.
+    #[test]
+    fn describe_exit_prefers_a_failure_line() {
+        let lines = vec![
+            "starting up".to_string(),
+            "Failed to start: address already in use".to_string(),
+            "shutting down".to_string(),
+        ];
+        let msg = CoreProcessManager::describe_exit(&lines, None);
+        assert!(msg.contains("address already in use"), "got: {msg}");
+    }
+
+    #[test]
+    fn describe_exit_handles_empty_output() {
+        let msg = CoreProcessManager::describe_exit(&[], None);
+        assert!(msg.contains("did not become ready"));
+    }
+
+    /// A core binary that does not exist must be reported, not panicked on.
+    #[test]
+    fn describe_exit_includes_exit_status() {
+        let lines = vec!["boom".to_string()];
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("exit 3")
+            .status()
+            .expect("run sh");
+        let msg = CoreProcessManager::describe_exit(&lines, Some(status));
+        assert!(msg.contains("3"), "got: {msg}");
     }
 }

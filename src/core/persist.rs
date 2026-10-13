@@ -6,6 +6,29 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Directory holding the application's configuration files.
+///
+/// Public because the log file lives beside the settings, and both must follow
+/// the same `XDG_CONFIG_HOME` rule.
+pub fn config_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+
+    let dir = base.join("xdelta");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Could not create config directory {:?}: {}", dir, e);
+        return None;
+    }
+
+    Some(dir)
+}
+
+/// Path of the application's log file.
+pub fn log_path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("xdelta.log"))
+}
+
 /// Visual preferences controlled from the Appearance section of the settings view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppearanceSettings {

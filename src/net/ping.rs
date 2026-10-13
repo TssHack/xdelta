@@ -36,11 +36,7 @@ pub async fn batch_ping_nodes(
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
-            let latency = match tcp_ping(&host, port, timeout_dur).await {
-                Ok(ms) => Some(ms),
-                Err(_) => None,
-            };
-            node.latency_ms = latency;
+            node.latency_ms = tcp_ping(&host, port, timeout_dur).await.ok();
             node
         });
 

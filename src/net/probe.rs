@@ -180,6 +180,78 @@ fn build_probe_config(nodes: &[Node]) -> Result<(Value, Vec<u16>), String> {
     Ok((config, ports))
 }
 
+/// Confirms a connection actually carries traffic.
+///
+/// A started core is not a working tunnel. Measured on the bundled
+/// subscription, roughly 95% of servers accept the TCP connection and start
+/// cleanly but forward nothing, so a connect that only checks the process is
+/// alive reports success for a dead server — which is exactly the confusing
+/// "connected but nothing loads" state.
+///
+/// Runs one small request through the local SOCKS listener and reports what
+/// happened.
+///
+/// The ambient proxy environment is cleared for this request. `curl` honours the
+/// desktop proxy settings in addition to `-x`, so once the system proxy points at
+/// these very listeners, the check's own traffic would be sent back into the
+/// proxy under test, fail instantly, and a working connection would be
+/// misreported as broken. That was a real bug.
+pub fn verify_connection(socks_port: u16, timeout: Duration) -> Result<u32, String> {
+    verify_via(
+        &format!("socks5h://127.0.0.1:{socks_port}"),
+        timeout,
+        "SOCKS",
+    )
+}
+
+/// Confirms traffic passes through the local HTTP listener.
+///
+/// Browsers configured for the desktop proxy talk to the HTTP port, not the
+/// SOCKS one, so checking only SOCKS can miss a broken HTTP path entirely — or, in
+/// the other direction, declare a healthy browser session dead.
+pub fn verify_connection_via_http(http_port: u16, timeout: Duration) -> Result<u32, String> {
+    verify_via(&format!("http://127.0.0.1:{http_port}"), timeout, "HTTP")
+}
+
+/// Shared implementation for both listener kinds.
+fn verify_via(proxy_url: &str, timeout: Duration, label: &str) -> Result<u32, String> {
+    let started = Instant::now();
+
+    let output = Command::new("curl")
+        // Ignore ambient proxy configuration; the target comes from -x.
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("all_proxy")
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("ALL_PROXY")
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--noproxy",
+            "*",
+            "--max-time",
+            &timeout.as_secs().to_string(),
+            "-x",
+            proxy_url,
+            PROBE_URL,
+        ])
+        .output()
+        .map_err(|e| format!("could not run the {label} connectivity check: {e}"))?;
+
+    let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let elapsed = started.elapsed().as_millis() as u32;
+
+    match code.as_str() {
+        "200" | "204" => Ok(elapsed),
+        "000" => Err(format!("the {label} listener did not carry traffic")),
+        other => Err(format!("{label} connectivity check returned HTTP {other}")),
+    }
+}
+
 /// A running probe core, torn down on drop.
 struct ProbeCore {
     child: Child,
@@ -939,5 +1011,75 @@ mod tests {
             !is_stale_probe_process(self_pid),
             "the test binary must never be classified as a stale probe"
         );
+    }
+}
+
+#[cfg(test)]
+mod verification_guards {
+    //! Guards for the connectivity check itself.
+    use super::*;
+
+    /// Regression guard: the check must pass even while the desktop proxy points
+    /// at the very listener being tested.
+    ///
+    /// Before the fix, `curl` picked up the desktop proxy settings in addition to
+    /// `-x`, so its traffic re-entered the proxy under test. The check failed
+    /// instantly, a working server was reported as dead, and the connection was
+    /// torn down.
+    #[test]
+    #[ignore = "requires network; mutates and restores the desktop proxy"]
+    fn verification_survives_an_enabled_system_proxy() {
+        let Some(cache) = crate::core::subscription_cache::load_cache(
+            crate::core::subscription_cache::DEFAULT_SUBSCRIPTION_URL,
+        ) else {
+            eprintln!("no cache");
+            return;
+        };
+
+        let nodes = deduplicate(&usable_nodes(&cache.nodes));
+        let batch: Vec<_> = nodes.into_iter().take(DEFAULT_BATCH_SIZE).collect();
+        let Ok(results) = probe_nodes(&batch, |_| {}) else {
+            eprintln!("probe failed");
+            return;
+        };
+        let mut ranked = batch.clone();
+        apply_results(&mut ranked, &results);
+        rank_nodes(&mut ranked);
+        let Some(node) = ranked.into_iter().find(|n| n.verified == Some(true)) else {
+            eprintln!("no verified server");
+            return;
+        };
+
+        let mut profile = crate::core::session::ConnectionProfile::new(
+            node,
+            crate::core::session::ConnectionMode::SystemProxy,
+        );
+        profile.routing.strategy = crate::core::session::RoutingStrategy::Rule;
+
+        let config = crate::core::config::generate_xray_config(&profile).expect("config");
+        let path = crate::core::config::write_config_to_temp_file(&config).expect("write");
+        let mut proc = crate::core::process::CoreProcessManager::start(&path).expect("start");
+        let _ = proc.wait_until_ready(std::time::Duration::from_secs(5));
+
+        // Point the desktop at our own listener, reproducing the exact state
+        // that used to break the check.
+        let snapshot = crate::net::sysproxy::GnomeProxyManager::snapshot().ok();
+        let enabled =
+            crate::net::sysproxy::GnomeProxyManager::enable(profile.http_port, profile.socks_port);
+        eprintln!("system proxy enabled: {enabled:?}");
+
+        let result = verify_connection(profile.socks_port, std::time::Duration::from_secs(10));
+        eprintln!("VERIFY WITH SYSTEM PROXY ON: {result:?}");
+
+        match &result {
+            Ok(_) => eprintln!("PASS: the check is no longer defeated by the system proxy"),
+            Err(e) => eprintln!("FAIL: {e}"),
+        }
+
+        if let Some(s) = snapshot {
+            let _ = crate::net::sysproxy::GnomeProxyManager::restore(&s);
+        }
+        let _ = proc.stop();
+        let _ = std::fs::remove_file(&path);
     }
 }

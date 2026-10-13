@@ -1,17 +1,22 @@
-name: CI
+name: CI & Release
 
 on:
   push:
     branches: [main, master]
+    tags:
+      - 'v*'
   pull_request:
     branches: [main, master]
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
-    name: Check
+    name: Check & Test
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +60,7 @@ jobs:
         run: cargo test
 
   build:
-    name: Build Release
+    name: Build & Package
     runs-on: ubuntu-24.04
     needs: check
     steps:
@@ -71,7 +76,25 @@ jobs:
             pkg-config \
             cmake \
             meson \
-            ninja-build
+            ninja-build \
+            rpm \
+            zstd \
+            tar \
+            ruby \
+            ruby-dev \
+            build-essential
+
+      - name: Install fpm for RPM and DEB packaging
+        run: |
+          sudo gem install --no-document fpm
+
+      - name: Setup appimagetool (FUSE-free extraction)
+        run: |
+          curl -sLo /tmp/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool.AppImage
+          (cd /tmp && ./appimagetool.AppImage --appimage-extract)
+          sudo mv /tmp/squashfs-root /usr/local/lib/appimagetool
+          sudo ln -s /usr/local/lib/appimagetool/AppRun /usr/local/bin/appimagetool
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -91,9 +114,44 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Upload binary artifact
+      - name: Package for Debian, Arch, Fedora, AppImage and Tarball
+        run: |
+          ./packaging/package.sh
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          echo "Generated packages:"
+          ls -lh
+
+      - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xdelta-linux-x86_64
-          path: target/release/xdelta
+          name: xdelta-packages
+          path: dist/*
           retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: xdelta-packages
+          path: dist
+
+      - name: List release assets
+        run: |
+          ls -la dist/
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

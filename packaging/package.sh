@@ -276,9 +276,13 @@ if [[ -z "${APPIMAGETOOL}" ]]; then
 fi
 
 if [[ -n "${APPIMAGETOOL}" ]]; then
-    ARCH="${ARCH}" "${APPIMAGETOOL}" --appimage-extract-and-run "${APPDIR}" "${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage" || \
-    ARCH="${ARCH}" "${APPIMAGETOOL}" "${APPDIR}" "${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage"
-    echo "    -> Created: ${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage"
+    if "${APPIMAGETOOL}" "${APPDIR}" "${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage" 2>/dev/null; then
+        echo "    -> Created: ${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage"
+    elif "${APPIMAGETOOL}" --appimage-extract-and-run "${APPDIR}" "${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage" 2>/dev/null; then
+        echo "    -> Created: ${DIST_DIR}/xdelta-${VERSION}-${ARCH}.AppImage"
+    else
+        echo "    [!] appimagetool execution failed, continuing..."
+    fi
 else
     echo "    [!] appimagetool not found, skipping .AppImage generation"
 fi

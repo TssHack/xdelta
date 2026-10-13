@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    color: var(--foreground);
+    margin: 0;
+    padding: 12px;
+  }
+  .container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 820px;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+  }
+  .header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(53, 132, 228, 0.15);
+    color: #3584e4;
+    border: 1px solid rgba(53, 132, 228, 0.3);
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .tab-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tab-btn.active {
+    background: #3584e4;
+    color: white;
+    border-color: #3584e4;
+    font-weight: 600;
+  }
+  .bg-toggle {
+    margin-right: auto;
+    display: flex;
+    gap: 4px;
+    background: rgba(0,0,0,0.2);
+    padding: 3px;
+    border-radius: 8px;
+  }
+  .bg-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .bg-dark { background: #15181f; border-color: rgba(255,255,255,0.2); }
+  .bg-adwaita { background: #242424; }
+  .bg-light { background: #f6f8fa; border-color: #d0d7de; }
+  
+  /* Cards Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .logo-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+  .card-desc {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    margin: 4px 0 0;
+    line-height: 1.4;
+  }
+  .stage {
+    height: 220px;
+    border-radius: 10px;
+    background: #15181f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.2s ease;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .stage svg {
+    max-width: 170px;
+    max-height: 170px;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3));
+  }
+  .scales {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    background: rgba(0,0,0,0.1);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+  .scale-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .scale-item svg {
+    display: block;
+  }
+  .action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .btn-action {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--foreground);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+  }
+  .btn-action:hover {
+    background: rgba(255,255,255,0.08);
+  }
+  .brand-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: linear-gradient(135deg, rgba(53,132,228,0.12) 0%, rgba(120,86,255,0.08) 100%);
+    border: 1px solid rgba(53,132,228,0.25);
+    border-radius: 12px;
+    padding: 12px 16px;
+  }
+  .brand-logo-mini {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .brand-text-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+  .brand-title-full {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-sub {
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h2>
+      <span>⚡ هویت بصری و دیزاین لوگوی xdelta</span>
+      <span class="badge">GTK4 / Libadwaita & Rust</span>
+    </h2>
+    <div class="bg-toggle" title="تغییر پس‌زمینه">
+      <button class="bg-btn bg-dark" onclick="setBg('#15181f')"></button>
+      <button class="bg-btn bg-adwaita" onclick="setBg('#242424')"></button>
+      <button class="bg-btn bg-light" onclick="setBg('#ffffff')"></button>
+    </div>
+  </div>
+
+  <!-- Live In-App Brand Header Preview -->
+  <div class="brand-banner">
+    <div class="brand-logo-mini">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- GNOME Adwaita Blue Gradients -->
+    <linearGradient id="gnome_left_wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="40%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_right_wing" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_base_beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c71d8"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#62a0ea"/>
+    </linearGradient>
+
+    <!-- Rust Engine Energy Core -->
+    <linearGradient id="gnome_rust_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <!-- 1px Specular Top Highlight -->
+    <linearGradient id="gnome_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- GNOME Ambient Drop Shadow -->
+    <filter id="gnome_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#gnome_shadow)">
+    <!-- Primary Left-To-Right Diagonal Beam -->
+    <path d="M 154 116 
+             C 164 104 182 100 196 108
+             L 392 396
+             C 402 408 398 424 384 432
+             L 352 446
+             C 338 454 320 448 310 436
+             L 112 152
+             C 102 140 106 124 120 116 Z" 
+          fill="url(#gnome_left_wing)"/>
+
+    <!-- Primary Right-To-Left Diagonal Beam -->
+    <path d="M 358 116 
+             C 348 104 330 100 316 108
+             L 120 396
+             C 110 408 114 424 128 432
+             L 160 446
+             C 174 454 192 448 202 436
+             L 400 152
+             C 410 140 406 124 392 116 Z" 
+          fill="url(#gnome_right_wing)"/>
+
+    <!-- Top Wing Specular Highlights -->
+    <path d="M 154 116 L 196 108 L 256 186 L 240 206 Z" fill="url(#gnome_rim)"/>
+    <path d="M 358 116 L 316 108 L 256 186 L 272 206 Z" fill="url(#gnome_rim)"/>
+
+    <!-- The Delta Apex Cap (Unifying the top into an authentic Greek Delta) -->
+    <path d="M 256 68 
+             L 304 136 
+             L 256 180 
+             L 208 136 Z" 
+          fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <!-- Horizontal Delta Base Beam (Grounded Foundation) -->
+    <path d="M 144 354
+             L 368 354
+             C 382 354 394 366 394 380
+             L 394 388
+             C 394 402 382 414 368 414
+             L 144 414
+             C 130 414 118 402 118 388
+             L 118 380
+             C 118 366 130 354 144 354 Z" 
+          fill="url(#gnome_base_beam)"/>
+    <rect x="144" y="354" width="224" height="3" rx="1.5" fill="url(#gnome_rim)"/>
+
+    <!-- Central Recessed Delta Aperture -->
+    <polygon points="256,208 214,284 298,284" 
+             fill="#181d29"/>
+
+    <!-- The Rust High-Velocity Energy Core -->
+    <polygon points="256,220 226,274 286,274" 
+             fill="url(#gnome_rust_core)"/>
+    <polygon points="256,220 286,274 256,274" 
+             fill="#ff7800"/>
+  </g>
+</svg>
+    </div>
+    <div class="brand-text-wrap">
+      <div class="brand-title-full">
+        <span>xdelta</span>
+        <span style="color: #3584e4; font-weight: 400; font-size: 14px;">/ High-Performance Linux Proxy</span>
+      </div>
+      <div class="brand-sub">کلاینت بومی Xray و Sing-box برای دسکتاپ لینوکس (Rust + Libadwaita)</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Option 1: Adwaita Native Emblem -->
+    <div class="logo-card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">گزینه ۱: نشان Adwaita (رسمی گنوم)</h3>
+          <p class="card-desc">الهام‌گرفته از استانداردهای GNOME HIG با متریال سه‌بعدی، هایلایت لبه و هسته نارنجی Rust.</p>
+        </div>
+      </div>
+      <div class="stage" id="stage1">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- GNOME Adwaita Blue Gradients -->
+    <linearGradient id="gnome_left_wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="40%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_right_wing" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_base_beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c71d8"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#62a0ea"/>
+    </linearGradient>
+
+    <!-- Rust Engine Energy Core -->
+    <linearGradient id="gnome_rust_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <!-- 1px Specular Top Highlight -->
+    <linearGradient id="gnome_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- GNOME Ambient Drop Shadow -->
+    <filter id="gnome_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#gnome_shadow)">
+    <!-- Primary Left-To-Right Diagonal Beam -->
+    <path d="M 154 116 
+             C 164 104 182 100 196 108
+             L 392 396
+             C 402 408 398 424 384 432
+             L 352 446
+             C 338 454 320 448 310 436
+             L 112 152
+             C 102 140 106 124 120 116 Z" 
+          fill="url(#gnome_left_wing)"/>
+
+    <!-- Primary Right-To-Left Diagonal Beam -->
+    <path d="M 358 116 
+             C 348 104 330 100 316 108
+             L 120 396
+             C 110 408 114 424 128 432
+             L 160 446
+             C 174 454 192 448 202 436
+             L 400 152
+             C 410 140 406 124 392 116 Z" 
+          fill="url(#gnome_right_wing)"/>
+
+    <!-- Top Wing Specular Highlights -->
+    <path d="M 154 116 L 196 108 L 256 186 L 240 206 Z" fill="url(#gnome_rim)"/>
+    <path d="M 358 116 L 316 108 L 256 186 L 272 206 Z" fill="url(#gnome_rim)"/>
+
+    <!-- The Delta Apex Cap (Unifying the top into an authentic Greek Delta) -->
+    <path d="M 256 68 
+             L 304 136 
+             L 256 180 
+             L 208 136 Z" 
+          fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <!-- Horizontal Delta Base Beam (Grounded Foundation) -->
+    <path d="M 144 354
+             L 368 354
+             C 382 354 394 366 394 380
+             L 394 388
+             C 394 402 382 414 368 414
+             L 144 414
+             C 130 414 118 402 118 388
+             L 118 380
+             C 118 366 130 354 144 354 Z" 
+          fill="url(#gnome_base_beam)"/>
+    <rect x="144" y="354" width="224" height="3" rx="1.5" fill="url(#gnome_rim)"/>
+
+    <!-- Central Recessed Delta Aperture -->
+    <polygon points="256,208 214,284 298,284" 
+             fill="#181d29"/>
+
+    <!-- The Rust High-Velocity Energy Core -->
+    <polygon points="256,220 226,274 286,274" 
+             fill="url(#gnome_rust_core)"/>
+    <polygon points="256,220 286,274 256,274" 
+             fill="#ff7800"/>
+  </g>
+</svg>
+      </div>
+      <div class="scales">
+        <span style="font-weight:600;">پیش‌نمایش سایزها:</span>
+        <div class="scale-item">
+          <div style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- GNOME Adwaita Blue Gradients -->
+    <linearGradient id="gnome_left_wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="40%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_right_wing" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_base_beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c71d8"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#62a0ea"/>
+    </linearGradient>
+
+    <!-- Rust Engine Energy Core -->
+    <linearGradient id="gnome_rust_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <!-- 1px Specular Top Highlight -->
+    <linearGradient id="gnome_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- GNOME Ambient Drop Shadow -->
+    <filter id="gnome_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#gnome_shadow)">
+    <!-- Primary Left-To-Right Diagonal Beam -->
+    <path d="M 154 116 
+             C 164 104 182 100 196 108
+             L 392 396
+             C 402 408 398 424 384 432
+             L 352 446
+             C 338 454 320 448 310 436
+             L 112 152
+             C 102 140 106 124 120 116 Z" 
+          fill="url(#gnome_left_wing)"/>
+
+    <!-- Primary Right-To-Left Diagonal Beam -->
+    <path d="M 358 116 
+             C 348 104 330 100 316 108
+             L 120 396
+             C 110 408 114 424 128 432
+             L 160 446
+             C 174 454 192 448 202 436
+             L 400 152
+             C 410 140 406 124 392 116 Z" 
+          fill="url(#gnome_right_wing)"/>
+
+    <!-- Top Wing Specular Highlights -->
+    <path d="M 154 116 L 196 108 L 256 186 L 240 206 Z" fill="url(#gnome_rim)"/>
+    <path d="M 358 116 L 316 108 L 256 186 L 272 206 Z" fill="url(#gnome_rim)"/>
+
+    <!-- The Delta Apex Cap (Unifying the top into an authentic Greek Delta) -->
+    <path d="M 256 68 
+             L 304 136 
+             L 256 180 
+             L 208 136 Z" 
+          fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <!-- Horizontal Delta Base Beam (Grounded Foundation) -->
+    <path d="M 144 354
+             L 368 354
+             C 382 354 394 366 394 380
+             L 394 388
+             C 394 402 382 414 368 414
+             L 144 414
+             C 130 414 118 402 118 388
+             L 118 380
+             C 118 366 130 354 144 354 Z" 
+          fill="url(#gnome_base_beam)"/>
+    <rect x="144" y="354" width="224" height="3" rx="1.5" fill="url(#gnome_rim)"/>
+
+    <!-- Central Recessed Delta Aperture -->
+    <polygon points="256,208 214,284 298,284" 
+             fill="#181d29"/>
+
+    <!-- The Rust High-Velocity Energy Core -->
+    <polygon points="256,220 226,274 286,274" 
+             fill="url(#gnome_rust_core)"/>
+    <polygon points="256,220 286,274 256,274" 
+             fill="#ff7800"/>
+  </g>
+</svg></div>
+          <span>32px</span>
+        </div>
+        <div class="scale-item">
+          <div style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- GNOME Adwaita Blue Gradients -->
+    <linearGradient id="gnome_left_wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="40%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_right_wing" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_base_beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c71d8"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#62a0ea"/>
+    </linearGradient>
+
+    <!-- Rust Engine Energy Core -->
+    <linearGradient id="gnome_rust_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <!-- 1px Specular Top Highlight -->
+    <linearGradient id="gnome_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- GNOME Ambient Drop Shadow -->
+    <filter id="gnome_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#gnome_shadow)">
+    <!-- Primary Left-To-Right Diagonal Beam -->
+    <path d="M 154 116 
+             C 164 104 182 100 196 108
+             L 392 396
+             C 402 408 398 424 384 432
+             L 352 446
+             C 338 454 320 448 310 436
+             L 112 152
+             C 102 140 106 124 120 116 Z" 
+          fill="url(#gnome_left_wing)"/>
+
+    <!-- Primary Right-To-Left Diagonal Beam -->
+    <path d="M 358 116 
+             C 348 104 330 100 316 108
+             L 120 396
+             C 110 408 114 424 128 432
+             L 160 446
+             C 174 454 192 448 202 436
+             L 400 152
+             C 410 140 406 124 392 116 Z" 
+          fill="url(#gnome_right_wing)"/>
+
+    <!-- Top Wing Specular Highlights -->
+    <path d="M 154 116 L 196 108 L 256 186 L 240 206 Z" fill="url(#gnome_rim)"/>
+    <path d="M 358 116 L 316 108 L 256 186 L 272 206 Z" fill="url(#gnome_rim)"/>
+
+    <!-- The Delta Apex Cap (Unifying the top into an authentic Greek Delta) -->
+    <path d="M 256 68 
+             L 304 136 
+             L 256 180 
+             L 208 136 Z" 
+          fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <!-- Horizontal Delta Base Beam (Grounded Foundation) -->
+    <path d="M 144 354
+             L 368 354
+             C 382 354 394 366 394 380
+             L 394 388
+             C 394 402 382 414 368 414
+             L 144 414
+             C 130 414 118 402 118 388
+             L 118 380
+             C 118 366 130 354 144 354 Z" 
+          fill="url(#gnome_base_beam)"/>
+    <rect x="144" y="354" width="224" height="3" rx="1.5" fill="url(#gnome_rim)"/>
+
+    <!-- Central Recessed Delta Aperture -->
+    <polygon points="256,208 214,284 298,284" 
+             fill="#181d29"/>
+
+    <!-- The Rust High-Velocity Energy Core -->
+    <polygon points="256,220 226,274 286,274" 
+             fill="url(#gnome_rust_core)"/>
+    <polygon points="256,220 286,274 256,274" 
+             fill="#ff7800"/>
+  </g>
+</svg></div>
+          <span>24px</span>
+        </div>
+        <div class="scale-item">
+          <div style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- GNOME Adwaita Blue Gradients -->
+    <linearGradient id="gnome_left_wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="40%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_right_wing" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+
+    <linearGradient id="gnome_base_beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1c71d8"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#62a0ea"/>
+    </linearGradient>
+
+    <!-- Rust Engine Energy Core -->
+    <linearGradient id="gnome_rust_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <!-- 1px Specular Top Highlight -->
+    <linearGradient id="gnome_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+
+    <!-- GNOME Ambient Drop Shadow -->
+    <filter id="gnome_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#gnome_shadow)">
+    <!-- Primary Left-To-Right Diagonal Beam -->
+    <path d="M 154 116 
+             C 164 104 182 100 196 108
+             L 392 396
+             C 402 408 398 424 384 432
+             L 352 446
+             C 338 454 320 448 310 436
+             L 112 152
+             C 102 140 106 124 120 116 Z" 
+          fill="url(#gnome_left_wing)"/>
+
+    <!-- Primary Right-To-Left Diagonal Beam -->
+    <path d="M 358 116 
+             C 348 104 330 100 316 108
+             L 120 396
+             C 110 408 114 424 128 432
+             L 160 446
+             C 174 454 192 448 202 436
+             L 400 152
+             C 410 140 406 124 392 116 Z" 
+          fill="url(#gnome_right_wing)"/>
+
+    <!-- Top Wing Specular Highlights -->
+    <path d="M 154 116 L 196 108 L 256 186 L 240 206 Z" fill="url(#gnome_rim)"/>
+    <path d="M 358 116 L 316 108 L 256 186 L 272 206 Z" fill="url(#gnome_rim)"/>
+
+    <!-- The Delta Apex Cap (Unifying the top into an authentic Greek Delta) -->
+    <path d="M 256 68 
+             L 304 136 
+             L 256 180 
+             L 208 136 Z" 
+          fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <!-- Horizontal Delta Base Beam (Grounded Foundation) -->
+    <path d="M 144 354
+             L 368 354
+             C 382 354 394 366 394 380
+             L 394 388
+             C 394 402 382 414 368 414
+             L 144 414
+             C 130 414 118 402 118 388
+             L 118 380
+             C 118 366 130 354 144 354 Z" 
+          fill="url(#gnome_base_beam)"/>
+    <rect x="144" y="354" width="224" height="3" rx="1.5" fill="url(#gnome_rim)"/>
+
+    <!-- Central Recessed Delta Aperture -->
+    <polygon points="256,208 214,284 298,284" 
+             fill="#181d29"/>
+
+    <!-- The Rust High-Velocity Energy Core -->
+    <polygon points="256,220 226,274 286,274" 
+             fill="url(#gnome_rust_core)"/>
+    <polygon points="256,220 286,274 256,274" 
+             fill="#ff7800"/>
+  </g>
+</svg></div>
+          <span>16px</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 2: Supersonic Cyber Delta -->
+    <div class="logo-card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">گزینه ۲: سرعت مافوق‌صوت (Supersonic)</h3>
+          <p class="card-desc">دیزاین های‌تک شبیه Linear و Raycast با دو بال دلتا، خطوط شتاب و گرادیان سایبرنئون.</p>
+        </div>
+      </div>
+      <div class="stage" id="stage2">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sup_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#00bbf9"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="sup_violet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <linearGradient id="sup_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="sup_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#sup_shadow)" transform="translate(0, 8)">
+    <!-- Upper Supersonic Delta Wing -->
+    <path d="M 256 64
+             L 416 268
+             L 358 300
+             L 256 180
+             L 154 300
+             L 96 268 Z" 
+          fill="url(#sup_cyan)"/>
+
+    <!-- Lower Inverse Swept Delta Wing -->
+    <path d="M 256 216
+             L 416 420
+             L 358 452
+             L 256 332
+             L 154 452
+             L 96 420 Z" 
+          fill="url(#sup_violet)"/>
+
+    <!-- Crossing Traversal Beams creating seamless optical flow -->
+    <path d="M 126 180 L 386 388 L 354 416 L 94 208 Z" 
+          fill="url(#sup_cyan)" opacity="0.4" style="mix-blend-mode: screen;"/>
+    <path d="M 386 180 L 126 388 L 94 416 L 354 208 Z" 
+          fill="url(#sup_violet)" opacity="0.4" style="mix-blend-mode: screen;"/>
+
+    <!-- Glowing Speed Apex / Seed -->
+    <polygon points="256,180 232,220 280,220" 
+             fill="url(#sup_core)"/>
+  </g>
+</svg>
+      </div>
+      <div class="scales">
+        <span style="font-weight:600;">پیش‌نمایش سایزها:</span>
+        <div class="scale-item">
+          <div style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sup_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#00bbf9"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="sup_violet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <linearGradient id="sup_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="sup_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#sup_shadow)" transform="translate(0, 8)">
+    <!-- Upper Supersonic Delta Wing -->
+    <path d="M 256 64
+             L 416 268
+             L 358 300
+             L 256 180
+             L 154 300
+             L 96 268 Z" 
+          fill="url(#sup_cyan)"/>
+
+    <!-- Lower Inverse Swept Delta Wing -->
+    <path d="M 256 216
+             L 416 420
+             L 358 452
+             L 256 332
+             L 154 452
+             L 96 420 Z" 
+          fill="url(#sup_violet)"/>
+
+    <!-- Crossing Traversal Beams creating seamless optical flow -->
+    <path d="M 126 180 L 386 388 L 354 416 L 94 208 Z" 
+          fill="url(#sup_cyan)" opacity="0.4" style="mix-blend-mode: screen;"/>
+    <path d="M 386 180 L 126 388 L 94 416 L 354 208 Z" 
+          fill="url(#sup_violet)" opacity="0.4" style="mix-blend-mode: screen;"/>
+
+    <!-- Glowing Speed Apex / Seed -->
+    <polygon points="256,180 232,220 280,220" 
+             fill="url(#sup_core)"/>
+  </g>
+</svg></div>
+          <span>32px</span>
+        </div>
+        <div class="scale-item">
+          <div style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sup_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#00bbf9"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="sup_violet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <linearGradient id="sup_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="sup_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#sup_shadow)" transform="translate(0, 8)">
+    <!-- Upper Supersonic Delta Wing -->
+    <path d="M 256 64
+             L 416 268
+             L 358 300
+             L 256 180
+             L 154 300
+             L 96 268 Z" 
+          fill="url(#sup_cyan)"/>
+
+    <!-- Lower Inverse Swept Delta Wing -->
+    <path d="M 256 216
+             L 416 420
+             L 358 452
+             L 256 332
+             L 154 452
+             L 96 420 Z" 
+          fill="url(#sup_violet)"/>
+
+    <!-- Crossing Traversal Beams creating seamless optical flow -->
+    <path d="M 126 180 L 386 388 L 354 416 L 94 208 Z" 
+          fill="url(#sup_cyan)" opacity="0.4" style="mix-blend-mode: screen;"/>
+    <path d="M 386 180 L 126 388 L 94 416 L 354 208 Z" 
+          fill="url(#sup_violet)" opacity="0.4" style="mix-blend-mode: screen;"/>
+
+    <!-- Glowing Speed Apex / Seed -->
+    <polygon points="256,180 232,220 280,220" 
+             fill="url(#sup_core)"/>
+  </g>
+</svg></div>
+          <span>24px</span>
+        </div>
+        <div class="scale-item">
+          <div style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sup_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#00bbf9"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="sup_violet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <linearGradient id="sup_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="sup_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#sup_shadow)" transform="translate(0, 8)">
+    <!-- Upper Supersonic Delta Wing -->
+    <path d="M 256 64
+             L 416 268
+             L 358 300
+             L 256 180
+             L 154 300
+             L 96 268 Z" 
+          fill="url(#sup_cyan)"/>
+
+    <!-- Lower Inverse Swept Delta Wing -->
+    <path d="M 256 216
+             L 416 420
+             L 358 452
+             L 256 332
+             L 154 452
+             L 96 420 Z" 
+          fill="url(#sup_violet)"/>
+
+    <!-- Crossing Traversal Beams creating seamless optical flow -->
+    <path d="M 126 180 L 386 388 L 354 416 L 94 208 Z" 
+          fill="url(#sup_cyan)" opacity="0.4" style="mix-blend-mode: screen;"/>
+    <path d="M 386 180 L 126 388 L 94 416 L 354 208 Z" 
+          fill="url(#sup_violet)" opacity="0.4" style="mix-blend-mode: screen;"/>
+
+    <!-- Glowing Speed Apex / Seed -->
+    <polygon points="256,180 232,220 280,220" 
+             fill="url(#sup_core)"/>
+  </g>
+</svg></div>
+          <span>16px</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 3: Full Desktop App Icon (Squircle) -->
+    <div class="logo-card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">گزینه ۳: آیکون کادر‌دار دسکتاپ (App Icon)</h3>
+          <p class="card-desc">پلیت استاندار با نورپردازی فوقانی برای لانچر Flathub، AppStream و منوی اپلیکیشن‌ها.</p>
+        </div>
+      </div>
+      <div class="stage" id="stage3">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Squircle Plate Gradient -->
+    <linearGradient id="sq_bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#222738"/>
+      <stop offset="100%" stop-color="#12151f"/>
+    </linearGradient>
+
+    <!-- Top Rim Specular Lighting -->
+    <linearGradient id="sq_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <!-- GNOME Blue Gradients -->
+    <linearGradient id="sq_blue_l" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+    <linearGradient id="sq_blue_r" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+    <linearGradient id="sq_rust" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <filter id="sq_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.6"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Plate -->
+  <g filter="url(#sq_shadow)">
+    <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#sq_bg)"/>
+    <rect x="24" y="24" width="464" height="464" rx="108" fill="none" stroke="url(#sq_rim)" stroke-width="2"/>
+    <rect x="25" y="484" width="462" height="3" rx="1.5" fill="rgba(0,0,0,0.5)"/>
+  </g>
+
+  <!-- Inner Recessed Subtle Ambient Grid -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="rgba(53,132,228,0.06)" stroke-width="1.5"/>
+
+  <!-- Centered Emblem -->
+  <g transform="translate(25.6, 25.6) scale(0.9)">
+    <path d="M 154 116 C 164 104 182 100 196 108 L 392 396 C 402 408 398 424 384 432 L 352 446 C 338 454 320 448 310 436 L 112 152 C 102 140 106 124 120 116 Z" fill="url(#sq_blue_l)"/>
+    <path d="M 358 116 C 348 104 330 100 316 108 L 120 396 C 110 408 114 424 128 432 L 160 446 C 174 454 192 448 202 436 L 400 152 C 410 140 406 124 392 116 Z" fill="url(#sq_blue_r)"/>
+    
+    <path d="M 256 68 L 304 136 L 256 180 L 208 136 Z" fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <path d="M 144 354 L 368 354 C 382 354 394 366 394 380 L 394 388 C 394 402 382 414 368 414 L 144 414 C 130 414 118 402 118 388 L 118 380 C 118 366 130 354 144 354 Z" fill="#1c71d8"/>
+
+    <polygon points="256,208 214,284 298,284" fill="#12151f"/>
+    <polygon points="256,220 226,274 286,274" fill="url(#sq_rust)"/>
+  </g>
+</svg>
+      </div>
+      <div class="scales">
+        <span style="font-weight:600;">کاربرد:</span>
+        <span>/usr/share/icons/hicolor/scalable/apps/</span>
+      </div>
+    </div>
+
+    <!-- Option 4: System Tray / Symbolic Indicator -->
+    <div class="logo-card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">گزینه ۴: آیکون نوتیفیکیشن و تاپ‌بار (Symbolic)</h3>
+          <p class="card-desc">وکتور تک‌رنگ مونوکروم مخصوص پنل بالای گنوم و ترای سیستم (AppIndicator).</p>
+        </div>
+      </div>
+      <div class="stage" id="stage4" style="background:#1e1e2e;">
+        <div style="width: 56px; height: 56px; color: #3584e4;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M 8 1 
+    L 10 4.5 
+    L 12.8 2 
+    L 14 3.2 
+    L 11.2 6.5 
+    L 15 13 
+    L 13 14.5 
+    L 10.2 9.5 
+    L 5.8 9.5 
+    L 3 14.5 
+    L 1 13 
+    L 4.8 6.5 
+    L 2 3.2 
+    L 3.2 2 
+    L 6 4.5 
+    Z 
+    M 8 4 
+    L 6.2 7.5 
+    L 9.8 7.5 
+    Z" />
+</svg>
+        </div>
+      </div>
+      <div class="scales">
+        <span style="font-weight:600;">حالت متصل:</span>
+        <div style="width:20px;height:20px;color:#2ec27e;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M 8 1 
+    L 10 4.5 
+    L 12.8 2 
+    L 14 3.2 
+    L 11.2 6.5 
+    L 15 13 
+    L 13 14.5 
+    L 10.2 9.5 
+    L 5.8 9.5 
+    L 3 14.5 
+    L 1 13 
+    L 4.8 6.5 
+    L 2 3.2 
+    L 3.2 2 
+    L 6 4.5 
+    Z 
+    M 8 4 
+    L 6.2 7.5 
+    L 9.8 7.5 
+    Z" />
+</svg></div>
+        <span style="font-weight:600;margin-right:12px;">قطع:</span>
+        <div style="width:20px;height:20px;color:rgba(255,255,255,0.4);"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M 8 1 
+    L 10 4.5 
+    L 12.8 2 
+    L 14 3.2 
+    L 11.2 6.5 
+    L 15 13 
+    L 13 14.5 
+    L 10.2 9.5 
+    L 5.8 9.5 
+    L 3 14.5 
+    L 1 13 
+    L 4.8 6.5 
+    L 2 3.2 
+    L 3.2 2 
+    L 6 4.5 
+    Z 
+    M 8 4 
+    L 6.2 7.5 
+    L 9.8 7.5 
+    Z" />
+</svg></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setBg(color) {
+    document.querySelectorAll('.stage').forEach(el => {
+      el.style.background = color;
+      if (color === '#ffffff') {
+        el.style.borderColor = '#d0d7de';
+      } else {
+        el.style.borderColor = 'rgba(255,255,255,0.05)';
+      }
+    });
+  }
+</script>
+</body>
+</html>

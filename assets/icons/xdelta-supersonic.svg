@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sup_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4"/>
+      <stop offset="40%" stop-color="#00bbf9"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="sup_violet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <linearGradient id="sup_core" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="sup_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#sup_shadow)" transform="translate(0, 8)">
+    <!-- Upper Supersonic Delta Wing -->
+    <path d="M 256 64
+             L 416 268
+             L 358 300
+             L 256 180
+             L 154 300
+             L 96 268 Z" 
+          fill="url(#sup_cyan)"/>
+
+    <!-- Lower Inverse Swept Delta Wing -->
+    <path d="M 256 216
+             L 416 420
+             L 358 452
+             L 256 332
+             L 154 452
+             L 96 420 Z" 
+          fill="url(#sup_violet)"/>
+
+    <!-- Crossing Traversal Beams creating seamless optical flow -->
+    <path d="M 126 180 L 386 388 L 354 416 L 94 208 Z" 
+          fill="url(#sup_cyan)" opacity="0.4" style="mix-blend-mode: screen;"/>
+    <path d="M 386 180 L 126 388 L 94 416 L 354 208 Z" 
+          fill="url(#sup_violet)" opacity="0.4" style="mix-blend-mode: screen;"/>
+
+    <!-- Glowing Speed Apex / Seed -->
+    <polygon points="256,180 232,220 280,220" 
+             fill="url(#sup_core)"/>
+  </g>
+</svg>

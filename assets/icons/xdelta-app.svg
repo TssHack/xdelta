@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Squircle Plate Gradient -->
+    <linearGradient id="sq_bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#222738"/>
+      <stop offset="100%" stop-color="#12151f"/>
+    </linearGradient>
+
+    <!-- Top Rim Specular Lighting -->
+    <linearGradient id="sq_rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <!-- GNOME Blue Gradients -->
+    <linearGradient id="sq_blue_l" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#62a0ea"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+    <linearGradient id="sq_blue_r" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#99c1f1"/>
+      <stop offset="50%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1a5fb4"/>
+    </linearGradient>
+    <linearGradient id="sq_rust" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ff7800"/>
+      <stop offset="100%" stop-color="#e66100"/>
+    </linearGradient>
+
+    <filter id="sq_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.6"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Plate -->
+  <g filter="url(#sq_shadow)">
+    <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#sq_bg)"/>
+    <rect x="24" y="24" width="464" height="464" rx="108" fill="none" stroke="url(#sq_rim)" stroke-width="2"/>
+    <rect x="25" y="484" width="462" height="3" rx="1.5" fill="rgba(0,0,0,0.5)"/>
+  </g>
+
+  <!-- Inner Recessed Subtle Ambient Grid -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="rgba(53,132,228,0.06)" stroke-width="1.5"/>
+
+  <!-- Centered Emblem -->
+  <g transform="translate(25.6, 25.6) scale(0.9)">
+    <path d="M 154 116 C 164 104 182 100 196 108 L 392 396 C 402 408 398 424 384 432 L 352 446 C 338 454 320 448 310 436 L 112 152 C 102 140 106 124 120 116 Z" fill="url(#sq_blue_l)"/>
+    <path d="M 358 116 C 348 104 330 100 316 108 L 120 396 C 110 408 114 424 128 432 L 160 446 C 174 454 192 448 202 436 L 400 152 C 410 140 406 124 392 116 Z" fill="url(#sq_blue_r)"/>
+    
+    <path d="M 256 68 L 304 136 L 256 180 L 208 136 Z" fill="#62a0ea"/>
+    <path d="M 256 68 L 304 136 L 256 148 Z" fill="#99c1f1"/>
+
+    <path d="M 144 354 L 368 354 C 382 354 394 366 394 380 L 394 388 C 394 402 382 414 368 414 L 144 414 C 130 414 118 402 118 388 L 118 380 C 118 366 130 354 144 354 Z" fill="#1c71d8"/>
+
+    <polygon points="256,208 214,284 298,284" fill="#12151f"/>
+    <polygon points="256,220 226,274 286,274" fill="url(#sq_rust)"/>
+  </g>
+</svg>

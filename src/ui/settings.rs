@@ -221,7 +221,7 @@ impl SettingsView {
             .title("xdelta Client")
             .subtitle("Version 1.0.0 • GNU General Public License v3.0")
             .build();
-        about_row.add_prefix(&gtk4::Image::from_icon_name("help-about-symbolic"));
+        about_row.add_prefix(&gtk4::Image::from_icon_name("xdelta-app"));
         about_group.add(&about_row);
 
         content_box.append(&core_group);

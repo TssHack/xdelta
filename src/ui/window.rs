@@ -33,6 +33,7 @@ impl MainWindow {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("xdelta")
+            .icon_name("xdelta-app")
             .default_width(980)
             .default_height(690)
             .build();
@@ -59,7 +60,8 @@ impl MainWindow {
             .build();
         brand_box.add_css_class("sidebar-brand-box");
 
-        let logo_icon = Image::from_icon_name("network-vpn-symbolic");
+        let logo_icon = Image::from_icon_name("xdelta");
+        logo_icon.set_pixel_size(26);
         logo_icon.add_css_class("sidebar-logo");
 
         let title_label = Label::builder()

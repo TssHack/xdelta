@@ -1,6 +1,8 @@
 <div align="center">
 
-# ⚡ xdelta
+<img src="assets/icons/xdelta.svg" width="128" height="128" alt="xdelta Logo" />
+
+# xdelta
 
 **Native, high-performance Linux proxy client for Xray and Sing-box.**  
 Built with Rust, GTK4, and Libadwaita. Designed for the modern Linux desktop.

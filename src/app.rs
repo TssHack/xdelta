@@ -23,6 +23,7 @@ impl App {
 
         app.connect_startup(|_| {
             Self::load_css();
+            Self::init_icon_theme();
         });
 
         app.connect_activate(|app| {
@@ -114,6 +115,7 @@ impl App {
         let server_name_lbl = main_window.dashboard_view.server_name_label.clone();
         let server_sub_label = main_window.dashboard_view.server_sub_label.clone();
         let power_btn = main_window.dashboard_view.power_button.clone();
+        let power_icon = main_window.dashboard_view.power_icon.clone();
         let down_label = main_window.dashboard_view.download_speed_label.clone();
         let up_label = main_window.dashboard_view.upload_speed_label.clone();
         let auto_proxy = main_window.dashboard_view.proxy_switch.clone();
@@ -158,6 +160,7 @@ impl App {
 
                     btn.remove_css_class("power-btn-disconnected");
                     btn.add_css_class("power-btn-connected");
+                    power_icon.set_icon_name(Some("xdelta-connected-symbolic"));
 
                     status_badge.set_label("CONNECTED");
                     status_badge.remove_css_class("status-disconnected");
@@ -179,6 +182,7 @@ impl App {
 
                 btn.remove_css_class("power-btn-connected");
                 btn.add_css_class("power-btn-disconnected");
+                power_icon.set_icon_name(Some("xdelta-disconnected-symbolic"));
 
                 status_badge.set_label("DISCONNECTED");
                 status_badge.remove_css_class("status-connected");
@@ -282,6 +286,25 @@ impl App {
                 &provider,
                 gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
+        }
+    }
+
+    fn init_icon_theme() {
+        if let Some(display) = Display::default() {
+            let icon_theme = gtk4::IconTheme::for_display(&display);
+            icon_theme.add_search_path("assets/icons/hicolor");
+            icon_theme.add_search_path("assets/icons/hicolor/scalable/apps");
+            icon_theme.add_search_path("assets/icons/hicolor/symbolic/apps");
+            icon_theme.add_search_path("assets/icons");
+
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(parent) = exe_path.parent() {
+                    icon_theme.add_search_path(parent.join("assets/icons/hicolor"));
+                    icon_theme.add_search_path(parent.join("../../assets/icons/hicolor"));
+                    icon_theme.add_search_path(parent.join("assets/icons"));
+                    icon_theme.add_search_path(parent.join("../../assets/icons"));
+                }
+            }
         }
     }
 

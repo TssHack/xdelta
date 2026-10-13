@@ -43,7 +43,7 @@ impl DashboardView {
         status_badge.add_css_class("status-disconnected");
 
         // The Circular Power Button
-        let power_icon = Image::from_icon_name("system-shutdown-symbolic");
+        let power_icon = Image::from_icon_name("xdelta-disconnected-symbolic");
         power_icon.add_css_class("power-icon-large");
 
         let power_button = Button::builder()
@@ -62,7 +62,7 @@ impl DashboardView {
             .build();
         server_banner.add_css_class("active-server-banner");
 
-        let server_icon = Image::from_icon_name("network-server-symbolic");
+        let server_icon = Image::from_icon_name("xdelta-symbolic");
         let server_text_box = Box::builder()
             .orientation(Orientation::Vertical)
             .spacing(2)

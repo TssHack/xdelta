@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish as official GitHub Release'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================================================
+  # 1. Build and Package for x86_64 (amd64)
+  # ============================================================================
+  build-x86_64:
+    name: Build & Package (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q -y
+          sudo apt-get install -q -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libssl-dev \
+            pkg-config \
+            cmake \
+            meson \
+            ninja-build \
+            rpm \
+            zstd \
+            tar \
+            ruby \
+            curl \
+            file
+          sudo gem install --no-document fpm
+
+      - name: Setup AppImageTool (x86_64)
+        run: |
+          curl -fsSL -o /tmp/appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool-x86_64.AppImage
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-x86_64-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-x86_64-cargo-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package all distributions (Debian, Arch, Fedora, AppImage, Tarball)
+        run: |
+          ./packaging/package.sh --binary target/release/xdelta --arch x86_64 --dist dist
+
+      - name: Upload x86_64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdelta-packages-x86_64
+          path: dist/*
+          retention-days: 7
+
+  # ============================================================================
+  # 2. Build and Package for aarch64 (ARM64)
+  # ============================================================================
+  build-aarch64:
+    name: Build & Package (aarch64 / ARM64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Build and Package inside ARM64 Ubuntu Container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            arm64v8/ubuntu:24.04 \
+            bash -c "
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -q -y
+              apt-get install -q -y \
+                libgtk-4-dev \
+                libadwaita-1-dev \
+                libssl-dev \
+                pkg-config \
+                cmake \
+                meson \
+                ninja-build \
+                curl \
+                build-essential \
+                ruby \
+                rpm \
+                zstd \
+                tar \
+                git \
+                file
+              gem install --no-document fpm
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+              source \$HOME/.cargo/env
+              
+              # Build native ARM64 release binary
+              cargo build --release
+              
+              # Download appimagetool for aarch64
+              curl -fsSL -o /tmp/appimagetool-aarch64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage || true
+              chmod +x /tmp/appimagetool-aarch64.AppImage || true
+              
+              # Package Debian (.deb), Fedora (.rpm), Arch (.pkg.tar.zst), AppImage, Tarball
+              ./packaging/package.sh --binary target/release/xdelta --arch aarch64 --dist dist-arm64
+            "
+
+      - name: Upload aarch64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdelta-packages-aarch64
+          path: dist-arm64/*
+          retention-days: 7
+
+  # ============================================================================
+  # 3. Consolidate Artifacts, Generate Checksums & Publish GitHub Release
+  # ============================================================================
+  publish:
+    name: Publish Release & Checksums
+    needs: [build-x86_64, build-aarch64]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create release bundle directory
+        run: mkdir -p release-assets
+
+      - name: Download x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: xdelta-packages-x86_64
+          path: release-assets/
+
+      - name: Download aarch64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: xdelta-packages-aarch64
+          path: release-assets/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          echo "=========================================================="
+          echo " Release Assets and Checksums:"
+          cat SHA256SUMS.txt
+          echo "=========================================================="
+
+      - name: Upload consolidated release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdelta-all-release-packages
+          path: release-assets/*
+          retention-days: 30
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_release == 'true'
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: false

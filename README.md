@@ -119,9 +119,25 @@ xdelta parses standard URI strings, Base64 subscription lists, and Clash/Meta co
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation & Quick Start
 
-### 1. Install System Dependencies
+### 📦 Pre-built Packages (x86_64 & aarch64)
+
+Download the latest release package for your distribution from the [GitHub Releases](https://github.com/TssHack/xdelta/releases) page:
+
+| Distribution / Format | Package Type | Architecture | Installation Command |
+| :--- | :---: | :---: | :--- |
+| **Debian / Ubuntu / Pop!_OS** | `.deb` | `amd64` / `arm64` | `sudo apt install ./xdelta_*.deb` |
+| **Arch Linux / CachyOS / Manjaro** | `.pkg.tar.zst` | `x86_64` / `aarch64` | `sudo pacman -U ./xdelta-*.pkg.tar.zst` |
+| **Fedora / RHEL / openSUSE** | `.rpm` | `x86_64` / `aarch64` | `sudo dnf install ./xdelta-*.rpm` |
+| **Universal Linux** | `.AppImage` | `x86_64` / `aarch64` | `chmod +x xdelta-*.AppImage && ./xdelta-*.AppImage` |
+| **Standalone Portable** | `.tar.gz` | `x86_64` / `aarch64` | `tar -xzf xdelta-*.tar.gz && ./install.sh` |
+
+---
+
+### 🛠️ Building from Source
+
+#### 1. Install System Dependencies
 
 Ensure the Rust toolchain and GTK4/Libadwaita headers are installed:
 

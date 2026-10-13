@@ -1,0 +1,31 @@
+# Maintainer: TssHack <https://github.com/TssHack/xdelta>
+pkgname=xdelta-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native, high-performance Linux proxy client for Xray and Sing-box (binary release)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/TssHack/xdelta"
+license=('GPL3')
+depends=('gtk4' 'libadwaita')
+optdepends=(
+    'xray: Xray proxy engine'
+    'sing-box: Sing-box proxy engine'
+)
+provides=('xdelta')
+conflicts=('xdelta')
+
+source_x86_64=("${url}/releases/download/v${pkgver}/xdelta-${pkgver}-linux-x86_64.tar.gz")
+source_aarch64=("${url}/releases/download/v${pkgver}/xdelta-${pkgver}-linux-aarch64.tar.gz")
+
+package() {
+    cd "${srcdir}/xdelta-${pkgver}-linux-${CARCH}"
+    install -Dm755 xdelta "${pkgdir}/usr/bin/xdelta"
+    install -Dm644 xdelta.desktop "${pkgdir}/usr/share/applications/xdelta.desktop"
+    
+    # Icons
+    if [ -d "assets/icons/hicolor" ]; then
+        cp -r assets/icons/hicolor "${pkgdir}/usr/share/icons/"
+    fi
+    
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

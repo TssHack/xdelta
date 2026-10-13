@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+# AppRun script for xdelta AppImage
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+export PATH="${HERE}/usr/bin:${PATH}"
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# Ensure GTK and Adwaita can discover bundled resources and themes
+if [ -d "${HERE}/usr/lib" ]; then
+    export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+fi
+
+exec "${HERE}/usr/bin/xdelta" "$@"

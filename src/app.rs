@@ -88,6 +88,17 @@ impl App {
             // Wire Clipboard Paste Button
             Self::wire_clipboard_paste(main_window.clone());
 
+            // Check for updates on startup
+            let banner = main_window.update_banner.clone();
+            glib::MainContext::default().spawn_local(async move {
+                if let Ok(info) = crate::updater::check_for_updates().await {
+                    if info.has_update {
+                        banner.set_title(&format!("⚡ New release <b>v{}</b> available on GitHub!", info.version));
+                        banner.set_revealed(true);
+                    }
+                }
+            });
+
             main_window.present();
         });
 

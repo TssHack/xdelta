@@ -5,11 +5,13 @@ use crate::ui::settings::SettingsView;
 use crate::ui::subscriptions::SubscriptionsView;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box, HeaderBar, Image, Label, ListBox, ListBoxRow, Orientation, Stack,
-    StackTransitionType,
+    Align, Box, Button, Image, Label, ListBox, ListBoxRow, Orientation, Stack, StackTransitionType,
 };
 use libadwaita::prelude::*;
-use libadwaita::{Application, ApplicationWindow};
+use libadwaita::{
+    Application, ApplicationWindow, Banner, Breakpoint, BreakpointCondition, HeaderBar,
+    OverlaySplitView,
+};
 use std::rc::Rc;
 
 pub struct MainWindow {
@@ -22,6 +24,8 @@ pub struct MainWindow {
     pub content_stack: Stack,
     pub nav_list: ListBox,
     pub page_title_label: Label,
+    pub split_view: OverlaySplitView,
+    pub update_banner: Banner,
 }
 
 impl MainWindow {
@@ -33,16 +37,18 @@ impl MainWindow {
             .default_height(690)
             .build();
 
-        // Main Horizontal Split: Left Sidebar + Right Content
-        let main_layout = Box::builder().orientation(Orientation::Horizontal).build();
+        // Responsive Adaptive OverlaySplitView (GNOME 45+ HIG)
+        let split_view = OverlaySplitView::new();
+        split_view.set_min_sidebar_width(220.0);
+        split_view.set_max_sidebar_width(280.0);
+        split_view.set_sidebar_width_fraction(0.24);
+        split_view.set_enable_show_gesture(true);
+        split_view.set_enable_hide_gesture(true);
 
         // ==========================================
-        // 1. LEFT SIDEBAR
+        // 1. ADAPTIVE SIDEBAR
         // ==========================================
-        let sidebar = Box::builder()
-            .orientation(Orientation::Vertical)
-            .width_request(240)
-            .build();
+        let sidebar = Box::builder().orientation(Orientation::Vertical).build();
         sidebar.add_css_class("sidebar-pane");
 
         // Brand & Title
@@ -118,11 +124,39 @@ impl MainWindow {
             .vexpand(true)
             .build();
 
-        // Top HeaderBar (Minimal & Native)
+        // Top HeaderBar (Minimal & Native Libadwaita)
         let header_bar = HeaderBar::new();
         let page_title_label = Label::builder().label("Dashboard").build();
         page_title_label.add_css_class("title-3");
         header_bar.set_title_widget(Some(&page_title_label));
+
+        // Responsive Sidebar Toggle Button (active in narrow / collapsed mode)
+        let sidebar_toggle_btn = Button::builder()
+            .icon_name("view-sidebar-symbolic")
+            .tooltip_text("Toggle Navigation")
+            .build();
+        sidebar_toggle_btn.add_css_class("flat");
+
+        let split_toggle_clone = split_view.clone();
+        sidebar_toggle_btn.connect_clicked(move |_| {
+            split_toggle_clone.set_show_sidebar(!split_toggle_clone.shows_sidebar());
+        });
+        header_bar.pack_start(&sidebar_toggle_btn);
+
+        // In-app Update Banner (revealed dynamically if new release is found)
+        let update_banner = Banner::builder()
+            .title("⚡ A new version of xdelta is available on GitHub")
+            .button_label("View Release")
+            .use_markup(true)
+            .build();
+        update_banner.set_revealed(false);
+
+        update_banner.connect_button_clicked(|_| {
+            let _ = gio::AppInfo::launch_default_for_uri(
+                "https://github.com/TssHack/xdelta/releases",
+                None::<&gio::AppLaunchContext>,
+            );
+        });
 
         // Content Stack
         let content_stack = Stack::builder()
@@ -145,11 +179,14 @@ impl MainWindow {
         content_stack.add_named(&settings_view.container, Some("settings"));
 
         right_container.append(&header_bar);
+        right_container.append(&update_banner);
         right_container.append(&content_stack);
 
         // Wire Sidebar Navigation to Stack Pages
         let stack_clone = content_stack.clone();
         let title_clone = page_title_label.clone();
+        let split_collapse_clone = split_view.clone();
+
         nav_list.connect_row_selected(move |_, row| {
             if let Some(r) = row {
                 match r.index() {
@@ -175,16 +212,28 @@ impl MainWindow {
                     }
                     _ => {}
                 }
+
+                // Auto-close overlay sidebar on mobile/narrow screen upon selection
+                if split_collapse_clone.is_collapsed() {
+                    split_collapse_clone.set_show_sidebar(false);
+                }
             }
         });
 
         // Select Dashboard initially
         nav_list.select_row(Some(&dash_row));
 
-        main_layout.append(&sidebar);
-        main_layout.append(&right_container);
+        split_view.set_sidebar(Some(&sidebar));
+        split_view.set_content(Some(&right_container));
 
-        window.set_content(Some(&main_layout));
+        // 3. Responsive Breakpoint (Libadwaita Breakpoint at 720px)
+        if let Ok(cond) = BreakpointCondition::parse("max-width: 720sp") {
+            let breakpoint = Breakpoint::new(cond);
+            breakpoint.add_setter(&split_view, "collapsed", Some(&true.to_value()));
+            window.add_breakpoint(breakpoint);
+        }
+
+        window.set_content(Some(&split_view));
 
         Self {
             window,
@@ -196,6 +245,8 @@ impl MainWindow {
             content_stack,
             nav_list,
             page_title_label,
+            split_view,
+            update_banner,
         }
     }
 

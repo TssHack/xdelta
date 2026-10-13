@@ -4,13 +4,11 @@ use crate::ui::servers::ServersView;
 use crate::ui::settings::SettingsView;
 use crate::ui::subscriptions::SubscriptionsView;
 use gtk4::prelude::*;
-use gtk4::{
-    Align, Box, Button, Image, Label, ListBox, ListBoxRow, Orientation, Stack, StackTransitionType,
-};
+use gtk4::{Align, Box, Button, Image, Label, ListBox, ListBoxRow, Orientation};
 use libadwaita::prelude::*;
 use libadwaita::{
     Application, ApplicationWindow, Banner, Breakpoint, BreakpointCondition, HeaderBar,
-    OverlaySplitView,
+    OverlaySplitView, ViewStack, ViewSwitcherBar,
 };
 use std::rc::Rc;
 
@@ -21,7 +19,8 @@ pub struct MainWindow {
     pub subscriptions_view: Rc<SubscriptionsView>,
     pub routing_view: Rc<RoutingView>,
     pub settings_view: Rc<SettingsView>,
-    pub content_stack: Stack,
+    pub view_stack: ViewStack,
+    pub view_switcher_bar: ViewSwitcherBar,
     pub nav_list: ListBox,
     pub page_title_label: Label,
     pub split_view: OverlaySplitView,
@@ -34,14 +33,17 @@ impl MainWindow {
             .application(app)
             .title("xdelta")
             .icon_name("xdelta-app")
-            .default_width(980)
-            .default_height(690)
+            .default_width(940)
+            .default_height(660)
             .build();
 
-        // Responsive Adaptive OverlaySplitView (GNOME 45+ HIG)
+        // Crucial for true responsiveness: allow window to shrink down to 360px without being blocked
+        window.set_size_request(360, 480);
+
+        // Adaptive OverlaySplitView (GNOME 45+ HIG)
         let split_view = OverlaySplitView::new();
         split_view.set_min_sidebar_width(220.0);
-        split_view.set_max_sidebar_width(280.0);
+        split_view.set_max_sidebar_width(260.0);
         split_view.set_sidebar_width_fraction(0.24);
         split_view.set_enable_show_gesture(true);
         split_view.set_enable_hide_gesture(true);
@@ -136,6 +138,7 @@ impl MainWindow {
         let sidebar_toggle_btn = Button::builder()
             .icon_name("view-sidebar-symbolic")
             .tooltip_text("Toggle Navigation")
+            .visible(false) // Initially hidden on wide desktop
             .build();
         sidebar_toggle_btn.add_css_class("flat");
 
@@ -160,13 +163,10 @@ impl MainWindow {
             );
         });
 
-        // Content Stack
-        let content_stack = Stack::builder()
-            .transition_type(StackTransitionType::Crossfade)
-            .transition_duration(180)
-            .vexpand(true)
-            .hexpand(true)
-            .build();
+        // Libadwaita ViewStack
+        let view_stack = ViewStack::new();
+        view_stack.set_vexpand(true);
+        view_stack.set_hexpand(true);
 
         let dashboard_view = Rc::new(DashboardView::new());
         let servers_view = Rc::new(ServersView::new());
@@ -174,44 +174,65 @@ impl MainWindow {
         let routing_view = Rc::new(RoutingView::new());
         let settings_view = Rc::new(SettingsView::new());
 
-        content_stack.add_named(&dashboard_view.container, Some("dashboard"));
-        content_stack.add_named(&servers_view.container, Some("servers"));
-        content_stack.add_named(&subscriptions_view.container, Some("subscriptions"));
-        content_stack.add_named(&routing_view.container, Some("routing"));
-        content_stack.add_named(&settings_view.container, Some("settings"));
+        let dash_page =
+            view_stack.add_titled(&dashboard_view.container, Some("dashboard"), "Dashboard");
+        dash_page.set_icon_name(Some("speedometer-symbolic"));
+
+        let srv_page = view_stack.add_titled(&servers_view.container, Some("servers"), "Servers");
+        srv_page.set_icon_name(Some("network-server-symbolic"));
+
+        let subs_page = view_stack.add_titled(
+            &subscriptions_view.container,
+            Some("subscriptions"),
+            "Subscriptions",
+        );
+        subs_page.set_icon_name(Some("folder-download-symbolic"));
+
+        let route_page = view_stack.add_titled(&routing_view.container, Some("routing"), "Routing");
+        route_page.set_icon_name(Some("route-symbolic"));
+
+        let sett_page =
+            view_stack.add_titled(&settings_view.container, Some("settings"), "Settings");
+        sett_page.set_icon_name(Some("preferences-system-symbolic"));
+
+        // Bottom Navigation Bar for Compact & Mobile View
+        let view_switcher_bar = ViewSwitcherBar::builder()
+            .stack(&view_stack)
+            .reveal(false) // Hidden on desktop, revealed on compact/tiled
+            .build();
 
         right_container.append(&header_bar);
         right_container.append(&update_banner);
-        right_container.append(&content_stack);
+        right_container.append(&view_stack);
+        right_container.append(&view_switcher_bar);
 
-        // Wire Sidebar Navigation to Stack Pages
-        let stack_clone = content_stack.clone();
-        let title_clone = page_title_label.clone();
+        // Synchronize ViewStack page changes to Header Title
+        let title_stack_clone = page_title_label.clone();
+        view_stack.connect_visible_child_name_notify(move |st| {
+            if let Some(name) = st.visible_child_name() {
+                match name.as_str() {
+                    "dashboard" => title_stack_clone.set_label("Dashboard"),
+                    "servers" => title_stack_clone.set_label("Servers"),
+                    "subscriptions" => title_stack_clone.set_label("Subscriptions"),
+                    "routing" => title_stack_clone.set_label("Routing Rules"),
+                    "settings" => title_stack_clone.set_label("Settings"),
+                    _ => {}
+                }
+            }
+        });
+
+        // Wire Sidebar Navigation to ViewStack
+        let stack_clone = view_stack.clone();
         let split_collapse_clone = split_view.clone();
 
         nav_list.connect_row_selected(move |_, row| {
             if let Some(r) = row {
                 match r.index() {
-                    0 => {
-                        stack_clone.set_visible_child_name("dashboard");
-                        title_clone.set_label("Dashboard");
-                    }
-                    1 => {
-                        stack_clone.set_visible_child_name("servers");
-                        title_clone.set_label("Servers");
-                    }
-                    2 => {
-                        stack_clone.set_visible_child_name("subscriptions");
-                        title_clone.set_label("Subscriptions");
-                    }
-                    3 => {
-                        stack_clone.set_visible_child_name("routing");
-                        title_clone.set_label("Routing Rules");
-                    }
-                    4 => {
-                        stack_clone.set_visible_child_name("settings");
-                        title_clone.set_label("Settings");
-                    }
+                    0 => stack_clone.set_visible_child_name("dashboard"),
+                    1 => stack_clone.set_visible_child_name("servers"),
+                    2 => stack_clone.set_visible_child_name("subscriptions"),
+                    3 => stack_clone.set_visible_child_name("routing"),
+                    4 => stack_clone.set_visible_child_name("settings"),
                     _ => {}
                 }
 
@@ -228,10 +249,21 @@ impl MainWindow {
         split_view.set_sidebar(Some(&sidebar));
         split_view.set_content(Some(&right_container));
 
-        // 3. Responsive Breakpoint (Libadwaita Breakpoint at 720px)
-        if let Ok(cond) = BreakpointCondition::parse("max-width: 720sp") {
+        // Dynamically toggle bottom bar and toggle button when collapsed state changes
+        let switcher_collapse_clone = view_switcher_bar.clone();
+        let toggle_btn_collapse_clone = sidebar_toggle_btn.clone();
+        split_view.connect_collapsed_notify(move |split| {
+            let is_col = split.is_collapsed();
+            switcher_collapse_clone.set_reveal(is_col);
+            toggle_btn_collapse_clone.set_visible(is_col);
+        });
+
+        // 3. Responsive Breakpoint (Libadwaita Breakpoint at 740px)
+        if let Ok(cond) = BreakpointCondition::parse("max-width: 740sp") {
             let breakpoint = Breakpoint::new(cond);
             breakpoint.add_setter(&split_view, "collapsed", Some(&true.to_value()));
+            breakpoint.add_setter(&sidebar_toggle_btn, "visible", Some(&true.to_value()));
+            breakpoint.add_setter(&view_switcher_bar, "reveal", Some(&true.to_value()));
             window.add_breakpoint(breakpoint);
         }
 
@@ -244,7 +276,8 @@ impl MainWindow {
             subscriptions_view,
             routing_view,
             settings_view,
-            content_stack,
+            view_stack,
+            view_switcher_bar,
             nav_list,
             page_title_label,
             split_view,

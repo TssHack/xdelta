@@ -11,6 +11,30 @@
     color: var(--foreground);
     user-select: none;
   }
+  .controls-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding: 0 4px;
+  }
+  .toggle-view-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(53, 132, 228, 0.18);
+    border: 1px solid #3584e4;
+    color: #3584e4;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .toggle-view-btn:hover {
+    background: #3584e4;
+    color: #fff;
+  }
+
+  /* Main App Container */
   .app-window {
     display: flex;
     width: 100%;
@@ -21,7 +45,14 @@
     border: 1px solid var(--border);
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
     overflow: hidden;
+    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
   }
+  .app-window.minimal {
+    max-width: 390px;
+    height: 620px;
+  }
+
   /* Sidebar */
   .sidebar {
     width: 230px;
@@ -30,16 +61,31 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
   }
+  .app-window.minimal .sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -240px;
+    z-index: 50;
+    background: var(--card);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  }
+  .app-window.minimal .sidebar.open {
+    left: 0;
+  }
+
   .brand-area {
     padding: 24px 20px 16px;
     display: flex;
     align-items: center;
     gap: 10px;
   }
-  .brand-icon {
-    font-size: 20px;
-    color: #3584e4;
+  .brand-logo-img {
+    width: 26px;
+    height: 26px;
   }
   .brand-name {
     font-size: 19px;
@@ -109,24 +155,91 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
+    position: relative;
   }
   .header-bar {
-    padding: 16px 28px;
+    padding: 12px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .btn-sidebar-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    color: var(--foreground);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .app-window.minimal .btn-sidebar-toggle {
+    display: block;
+  }
+  .btn-sidebar-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
   .page-title {
     font-size: 17px;
     font-weight: 700;
   }
+
+  /* In-app Update Banner */
+  .update-banner {
+    background: rgba(53, 132, 228, 0.12);
+    border-bottom: 1px solid rgba(53, 132, 228, 0.3);
+    padding: 8px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .update-btn {
+    background: #3584e4;
+    color: #fff;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* Scrollable view container */
+  .view-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  /* Fluid Clamp wrapper */
+  .clamp-box {
+    width: 100%;
+    max-width: 660px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .app-window.minimal .clamp-box {
+    padding: 12px;
+    gap: 12px;
+  }
+
   .view-pane {
-    padding: 24px 32px;
     display: none;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
   }
   .view-pane.active {
     display: flex;
@@ -137,11 +250,11 @@
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
     border-radius: 20px;
-    padding: 28px 24px 22px;
+    padding: 24px 20px 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 18px;
+    gap: 16px;
     position: relative;
     overflow: hidden;
   }
@@ -177,6 +290,10 @@
     border: 4px solid var(--border);
     background: rgba(255, 255, 255, 0.03);
   }
+  .app-window.minimal .power-btn {
+    width: 115px;
+    height: 115px;
+  }
   .power-btn:hover {
     transform: scale(1.05);
   }
@@ -190,8 +307,8 @@
     box-shadow: 0 0 35px rgba(46, 194, 126, 0.45);
   }
   .power-svg {
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
     stroke: currentColor;
     fill: none;
     stroke-width: 2.2;
@@ -208,11 +325,12 @@
   .server-banner {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     background: rgba(0, 0, 0, 0.18);
     border: 1px solid var(--border);
-    padding: 8px 18px;
+    padding: 8px 14px;
     border-radius: 12px;
+    max-width: 100%;
   }
   .server-title {
     font-size: 13px;
@@ -227,16 +345,19 @@
   .telemetry-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    gap: 12px;
+  }
+  .app-window.minimal .telemetry-row {
+    gap: 8px;
   }
   .telemetry-card {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 14px 18px;
+    padding: 12px 14px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
   }
   .telemetry-header {
     display: flex;
@@ -248,7 +369,7 @@
   }
   .telemetry-val {
     font-family: monospace;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 800;
   }
   .val-down { color: #2ec27e; }
@@ -268,10 +389,6 @@
     align-items: center;
     justify-content: space-between;
     transition: all 150ms ease;
-  }
-  .row-card:hover {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: #3584e4;
   }
   .badge-proto {
     font-size: 9px;
@@ -298,62 +415,52 @@
     padding: 6px;
     border-radius: 6px;
   }
-  .btn-ping-row:hover {
-    color: var(--foreground);
-    background: rgba(255, 255, 255, 0.08);
-  }
 
-  /* Filter pills */
-  .pills-bar {
+  /* Bottom ViewSwitcherBar for Compact / Mobile Mode */
+  .bottom-switcher-bar {
+    display: none;
+    height: 58px;
+    background: rgba(0, 0, 0, 0.25);
+    border-top: 1px solid var(--border);
+    justify-content: space-around;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .app-window.minimal .bottom-switcher-bar {
     display: flex;
-    gap: 8px;
   }
-  .pill-btn {
-    padding: 6px 14px;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border);
-    font-size: 12px;
+  .bottom-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
     font-weight: 600;
+    color: var(--muted-foreground);
     cursor: pointer;
-    color: var(--foreground);
   }
-  .pill-btn.active {
-    background: #3584e4;
-    border-color: #3584e4;
-    color: #fff;
+  .bottom-item.active {
+    color: #3584e4;
   }
-
-  /* Quota bar */
-  .quota-bar-bg {
-    width: 100%;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-top: 6px;
-  }
-  .quota-bar-fill {
-    width: 42%;
-    height: 100%;
-    background: #3584e4;
-    border-radius: 3px;
+  .bottom-item span:first-child {
+    font-size: 16px;
   }
 
   /* Switch */
   .switch {
-    width: 42px;
-    height: 24px;
+    width: 40px;
+    height: 22px;
     background: #3584e4;
-    border-radius: 12px;
+    border-radius: 11px;
     position: relative;
     cursor: pointer;
+    flex-shrink: 0;
   }
   .switch::after {
     content: "";
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     background: #fff;
     border-radius: 50%;
     top: 3px;
@@ -363,20 +470,20 @@
 </head>
 <body>
 
-<div class="app-window">
-  <!-- Left Sidebar -->
-  <aside class="sidebar">
+<div class="controls-bar">
+  <div style="font-size: 12px; font-weight: 700; color: var(--muted-foreground);">Adaptive View Mode:</div>
+  <button id="toggleViewBtn" class="toggle-view-btn" onclick="toggleResponsiveMode()">📱 Simulate Minimal / Mobile Width (380px)</button>
+</div>
+
+<div id="appWin" class="app-window">
+  <!-- Left Sidebar (Overlay / Split) -->
+  <aside id="sidebarPane" class="sidebar">
     <div>
       <div class="brand-area">
-        <span class="brand-icon" style="width: 24px; height: 24px; display: inline-flex; align-items: center;">
-          <svg viewBox="0 0 512 512" width="24" height="24">
-            <path d="M 154 116 C 164 104 182 100 196 108 L 392 396 C 402 408 398 424 384 432 L 352 446 C 338 454 320 448 310 436 L 112 152 C 102 140 106 124 120 116 Z" fill="#3584e4"/>
-            <path d="M 358 116 C 348 104 330 100 316 108 L 120 396 C 110 408 114 424 128 432 L 160 446 C 174 454 192 448 202 436 L 400 152 C 410 140 406 124 392 116 Z" fill="#62a0ea"/>
-            <path d="M 256 68 L 304 136 L 256 180 L 208 136 Z" fill="#99c1f1"/>
-            <path d="M 144 354 L 368 354 C 382 354 394 366 394 380 L 394 388 C 394 402 382 414 368 414 L 144 414 C 130 414 118 402 118 388 L 118 380 C 118 366 130 354 144 354 Z" fill="#1c71d8"/>
-            <polygon points="256,220 226,274 286,274" fill="#ff7800"/>
-          </svg>
-        </span>
+        <svg class="brand-logo-img" viewBox="0 0 100 100">
+          <polygon points="50,10 90,85 10,85" fill="#3584e4"/>
+          <polygon points="50,30 75,80 25,80" fill="#2ec27e"/>
+        </svg>
         <span class="brand-name">xdelta</span>
         <span class="badge-ver">v1.0</span>
       </div>
@@ -414,195 +521,181 @@
   <!-- Right Content Area -->
   <main class="content">
     <div class="header-bar">
-      <div id="headerTitle" class="page-title">Dashboard</div>
-      <div style="font-size: 12px; opacity: 0.6;">SOCKS: 10808 • HTTP: 10809</div>
+      <div class="header-left">
+        <button class="btn-sidebar-toggle" onclick="toggleSidebarDrawer()">☰</button>
+        <div id="headerTitle" class="page-title">Dashboard</div>
+      </div>
+      <div style="font-size: 11px; opacity: 0.6;">SOCKS: 10808</div>
     </div>
 
-    <!-- 1. DASHBOARD VIEW -->
-    <div id="view-dash" class="view-pane active">
-      <div class="power-hub">
-        <div id="statusBadge" class="status-badge disconnected">DISCONNECTED</div>
-
-        <div id="powerBtn" class="power-btn disconnected" onclick="toggleConnect()">
-          <svg class="power-svg" viewBox="0 0 24 24">
-            <path d="M12 2v10M18.36 6.64A9 9 0 1 1 5.64 6.64"/>
-          </svg>
-        </div>
-
-        <div class="server-banner">
-          <span style="font-size: 18px;">🇩🇪</span>
-          <div>
-            <div class="server-title">Frankfurt 01 (Fast)</div>
-            <div id="serverSub" class="server-sub">Click button to establish tunnel</div>
-          </div>
-          <span class="badge-proto">VLESS-REALITY</span>
-        </div>
-      </div>
-
-      <div class="telemetry-row">
-        <div class="telemetry-card">
-          <div class="telemetry-header">
-            <span>↓</span>
-            <span>DOWNLOAD RATE</span>
-          </div>
-          <div id="downSpeed" class="telemetry-val val-down">0.00 KB/s</div>
-          <div class="telemetry-sub">Session: 0.0 MB</div>
-        </div>
-
-        <div class="telemetry-card">
-          <div class="telemetry-header">
-            <span>↑</span>
-            <span>UPLOAD RATE</span>
-          </div>
-          <div id="upSpeed" class="telemetry-val val-up">0.00 KB/s</div>
-          <div class="telemetry-sub">Session: 0.0 MB</div>
-        </div>
-      </div>
-
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 600;">GNOME Desktop System Proxy</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">Automatically forward desktop HTTP & SOCKS traffic on connect</div>
-        </div>
-        <div class="switch"></div>
-      </div>
+    <!-- In-App GitHub Update Banner -->
+    <div class="update-banner">
+      <span>⚡ New release <b>v1.1.0</b> available on GitHub</span>
+      <button class="update-btn" onclick="window.open('https://github.com/TssHack/xdelta/releases', '_blank')">View Release</button>
     </div>
 
-    <!-- 2. SERVERS VIEW -->
-    <div id="view-servers" class="view-pane">
-      <div style="display: flex; gap: 10px;">
-        <input type="text" placeholder="Search servers by name or address..." style="flex: 1; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--foreground);" />
-        <button onclick="pingAll()" style="padding: 8px 16px; border-radius: 8px; background: #3584e4; color: #fff; border: none; font-weight: 700; cursor: pointer;">⚡ Test All</button>
-      </div>
+    <!-- Scrollable Fluid Viewport -->
+    <div class="view-scroll-container">
+      <div class="clamp-box">
+        
+        <!-- 1. DASHBOARD VIEW -->
+        <div id="view-dash" class="view-pane active">
+          <div class="power-hub">
+            <div id="statusBadge" class="status-badge disconnected">DISCONNECTED</div>
 
-      <div class="pills-bar">
-        <div class="pill-btn active">All (3)</div>
-        <div class="pill-btn">VLESS</div>
-        <div class="pill-btn">VMess</div>
-        <div class="pill-btn">Trojan</div>
-      </div>
+            <div id="powerBtn" class="power-btn disconnected" onclick="toggleConnect()">
+              <svg class="power-svg" viewBox="0 0 24 24">
+                <path d="M12 2v10M18.36 6.64A9 9 0 1 1 5.64 6.64"/>
+              </svg>
+            </div>
 
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div class="row-card">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <input type="radio" name="srv" checked />
-            <span class="badge-proto">VLESS</span>
-            <div>
-              <div style="font-size: 13px; font-weight: 700;">Frankfurt 01 (Fast)</div>
-              <div style="font-size: 11px; color: var(--muted-foreground);">1.1.1.1:443 • Reality</div>
+            <div class="server-banner">
+              <span style="font-size: 16px;">🇩🇪</span>
+              <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <div class="server-title">Frankfurt 01 (Fast)</div>
+                <div id="serverSub" class="server-sub">Click to establish tunnel</div>
+              </div>
+              <span class="badge-proto" style="margin-left: auto;">VLESS</span>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span id="p1" class="badge-ping">142 ms</span>
-            <button class="btn-ping-row" onclick="pingOne('p1')">🔄</button>
-          </div>
-        </div>
 
-        <div class="row-card">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <input type="radio" name="srv" />
-            <span class="badge-proto">VLESS</span>
-            <div>
-              <div style="font-size: 13px; font-weight: 700;">Amsterdam 02 (Premium)</div>
-              <div style="font-size: 11px; color: var(--muted-foreground);">8.8.8.8:443 • Reality</div>
+          <div class="telemetry-row">
+            <div class="telemetry-card">
+              <div class="telemetry-header">
+                <span>↓</span>
+                <span>DOWNLOAD</span>
+              </div>
+              <div id="downSpeed" class="telemetry-val val-down">0.00 KB/s</div>
+              <div class="telemetry-sub">Total: 0.0 MB</div>
+            </div>
+
+            <div class="telemetry-card">
+              <div class="telemetry-header">
+                <span>↑</span>
+                <span>UPLOAD</span>
+              </div>
+              <div id="upSpeed" class="telemetry-val val-up">0.00 KB/s</div>
+              <div class="telemetry-sub">Total: 0.0 MB</div>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span id="p2" class="badge-ping">185 ms</span>
-            <button class="btn-ping-row" onclick="pingOne('p2')">🔄</button>
+
+          <div class="row-card">
+            <div>
+              <div style="font-size: 13px; font-weight: 600;">System Proxy</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">GNOME desktop proxy integration</div>
+            </div>
+            <div class="switch"></div>
           </div>
         </div>
 
-        <div class="row-card">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <input type="radio" name="srv" />
-            <span class="badge-proto" style="color: #9141ac; background: rgba(145,65,172,0.18);">VMESS</span>
-            <div>
-              <div style="font-size: 13px; font-weight: 700;">Helsinki 03 (CDN-WS)</div>
-              <div style="font-size: 11px; color: var(--muted-foreground);">9.9.9.9:8080 • WS+TLS</div>
+        <!-- 2. SERVERS VIEW -->
+        <div id="view-servers" class="view-pane">
+          <div style="display: flex; gap: 8px;">
+            <input type="text" placeholder="Search servers..." style="flex: 1; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--foreground); font-size: 12px;" />
+            <button onclick="pingAll()" style="padding: 7px 12px; border-radius: 8px; background: #3584e4; color: #fff; border: none; font-weight: 700; font-size: 12px; cursor: pointer;">⚡ Ping All</button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="row-card">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="radio" name="srv" checked />
+                <span class="badge-proto">VLESS</span>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700;">Frankfurt 01 (Fast)</div>
+                  <div style="font-size: 11px; color: var(--muted-foreground);">1.1.1.1:443</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="p1" class="badge-ping">142 ms</span>
+                <button class="btn-ping-row" onclick="pingOne('p1')">🔄</button>
+              </div>
+            </div>
+
+            <div class="row-card">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="radio" name="srv" />
+                <span class="badge-proto">VLESS</span>
+                <div>
+                  <div style="font-size: 13px; font-weight: 700;">Amsterdam 02 (Premium)</div>
+                  <div style="font-size: 11px; color: var(--muted-foreground);">8.8.8.8:443</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="p2" class="badge-ping">185 ms</span>
+                <button class="btn-ping-row" onclick="pingOne('p2')">🔄</button>
+              </div>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span id="p3" class="badge-ping">264 ms</span>
-            <button class="btn-ping-row" onclick="pingOne('p3')">🔄</button>
+        </div>
+
+        <!-- 3. SUBSCRIPTIONS VIEW -->
+        <div id="view-subs" class="view-pane">
+          <div class="row-card" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 14px; font-weight: 700;">Frankfurt VIP Highway</div>
+                <div style="font-size: 11px; color: var(--muted-foreground);">3 servers active</div>
+              </div>
+              <button class="btn-ping-row">🔄</button>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground);">
+                <span>Usage: 42 GB / 100 GB</span>
+                <span>42%</span>
+              </div>
+              <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-top: 6px;">
+                <div style="width: 42%; height: 100%; background: #3584e4; border-radius: 3px;"></div>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- 4. ROUTING VIEW -->
+        <div id="view-routing" class="view-pane">
+          <div class="row-card">
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Bypass Iran (.ir) & Private LAN</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">Direct domestic connect</div>
+            </div>
+            <div class="switch"></div>
+          </div>
+        </div>
+
+        <!-- 5. SETTINGS VIEW -->
+        <div id="view-settings" class="view-pane">
+          <div class="row-card">
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Proxy Engine</div>
+              <div style="font-size: 11px; color: var(--muted-foreground);">Xray-Core v26.3.27</div>
+            </div>
+            <span class="badge-ping">Active</span>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- 3. SUBSCRIPTIONS VIEW -->
-    <div id="view-subs" class="view-pane">
-      <div style="display: flex; gap: 10px;">
-        <input type="text" placeholder="https://provider.com/api/v1/client/subscribe?token=..." style="flex: 1; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.1); color: var(--foreground);" />
-        <button style="padding: 8px 16px; border-radius: 8px; background: #3584e4; color: #fff; border: none; font-weight: 700; cursor: pointer;">+ Add & Fetch</button>
+    <!-- Bottom Navigation Bar (Reveals automatically on Compact / Mobile Mode) -->
+    <div class="bottom-switcher-bar">
+      <div class="bottom-item active" onclick="switchTab('dash', this)">
+        <span>📊</span>
+        <span>Dashboard</span>
       </div>
-
-      <div class="row-card" style="flex-direction: column; align-items: stretch; gap: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size: 14px; font-weight: 700;">Frankfurt VIP Highway</div>
-            <div style="font-size: 11px; color: var(--muted-foreground);">3 servers • Updated 5 mins ago</div>
-          </div>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn-ping-row">🔄 Refresh</button>
-            <button class="btn-ping-row" style="color: #e01b24;">🗑 Remove</button>
-          </div>
-        </div>
-        <div>
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground);">
-            <span>Traffic Quota: 42.0 GB / 100.0 GB</span>
-            <span>42%</span>
-          </div>
-          <div class="quota-bar-bg">
-            <div class="quota-bar-fill"></div>
-          </div>
-        </div>
+      <div class="bottom-item" onclick="switchTab('servers', this)">
+        <span>🌐</span>
+        <span>Servers</span>
       </div>
-    </div>
-
-    <!-- 4. ROUTING VIEW -->
-    <div id="view-routing" class="view-pane">
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 700;">Bypass Iran (.ir) & Private LAN</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">Directly connect domestic services (geoip:ir / geosite:category-ir)</div>
-        </div>
-        <div class="switch"></div>
+      <div class="bottom-item" onclick="switchTab('subs', this)">
+        <span>📥</span>
+        <span>Subs</span>
       </div>
-
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 700;">Block Ads & Trackers</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">Sinkhole malicious domains and tracking beacons (geosite:category-ads-all)</div>
-        </div>
-        <div class="switch"></div>
+      <div class="bottom-item" onclick="switchTab('routing', this)">
+        <span>🔀</span>
+        <span>Routing</span>
       </div>
-    </div>
-
-    <!-- 5. SETTINGS VIEW -->
-    <div id="view-settings" class="view-pane">
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 700;">Proxy Engine</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">Detected: /usr/bin/xray (Version 26.3.27)</div>
-        </div>
-        <span class="badge-ping" style="background: rgba(46,194,126,0.15); color: #2ec27e;">Active: Xray-Core</span>
-      </div>
-
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 700;">Local Listener Ports</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">SOCKS5 Port: 10808 • HTTP Proxy Port: 10809</div>
-        </div>
-        <button class="btn-ping-row">⚙ Edit</button>
-      </div>
-
-      <div class="row-card">
-        <div>
-          <div style="font-size: 13px; font-weight: 700;">Theme Appearance</div>
-          <div style="font-size: 11px; color: var(--muted-foreground);">Respects GNOME System Theme (Dark/Light) via AdwStyleManager</div>
-        </div>
-        <span style="font-size: 12px; opacity: 0.7;">System Default ▾</span>
+      <div class="bottom-item" onclick="switchTab('settings', this)">
+        <span>⚙️</span>
+        <span>Settings</span>
       </div>
     </div>
   </main>
@@ -610,6 +703,26 @@
 
 <script>
   let connected = false;
+  let isMinimal = false;
+
+  function toggleResponsiveMode() {
+    isMinimal = !isMinimal;
+    const win = document.getElementById("appWin");
+    const btn = document.getElementById("toggleViewBtn");
+    if (isMinimal) {
+      win.classList.add("minimal");
+      btn.textContent = "💻 Switch to Desktop Width (900px)";
+    } else {
+      win.classList.remove("minimal");
+      document.getElementById("sidebarPane").classList.remove("open");
+      btn.textContent = "📱 Simulate Minimal / Mobile Width (380px)";
+    }
+  }
+
+  function toggleSidebarDrawer() {
+    document.getElementById("sidebarPane").classList.toggle("open");
+  }
+
   function toggleConnect() {
     connected = !connected;
     const btn = document.getElementById("powerBtn");
@@ -621,15 +734,15 @@
     if (connected) {
       btn.className = "power-btn connected";
       badge.className = "status-badge connected";
-      badge.textContent = "SECURE & CONNECTED";
-      sub.textContent = "Active tunnel • 142 ms";
+      badge.textContent = "CONNECTED";
+      sub.textContent = "Tunnel active • 142 ms";
       down.textContent = "4.82 MB/s";
       up.textContent = "320 KB/s";
     } else {
       btn.className = "power-btn disconnected";
       badge.className = "status-badge disconnected";
       badge.textContent = "DISCONNECTED";
-      sub.textContent = "Click button to establish tunnel";
+      sub.textContent = "Click to establish tunnel";
       down.textContent = "0.00 KB/s";
       up.textContent = "0.00 KB/s";
     }
@@ -637,7 +750,14 @@
 
   function switchTab(name, elem) {
     document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
-    elem.classList.add("active");
+    document.querySelectorAll(".bottom-item").forEach(el => el.classList.remove("active"));
+    
+    // Highlight matching items
+    document.querySelectorAll(`.nav-item, .bottom-item`).forEach(el => {
+      if (el.textContent.toLowerCase().includes(name.slice(0, 4))) {
+        el.classList.add("active");
+      }
+    });
 
     document.querySelectorAll(".view-pane").forEach(el => el.classList.remove("active"));
     document.getElementById("view-" + name).classList.add("active");
@@ -650,6 +770,9 @@
       settings: "Settings"
     };
     document.getElementById("headerTitle").textContent = titles[name];
+
+    // Auto-close drawer on mobile
+    document.getElementById("sidebarPane").classList.remove("open");
   }
 
   function pingOne(id) {
@@ -658,11 +781,11 @@
     setTimeout(() => {
       const ms = Math.floor(110 + Math.random() * 80);
       el.textContent = ms + " ms";
-    }, 400);
+    }, 350);
   }
 
   function pingAll() {
-    ['p1', 'p2', 'p3'].forEach(id => pingOne(id));
+    ['p1', 'p2'].forEach(id => pingOne(id));
   }
 </script>
 

@@ -89,9 +89,28 @@ impl ServersView {
             .child(&list_box)
             .build();
 
-        container.append(&top_box);
-        container.append(&filter_box);
-        container.append(&scrolled);
+        let inner_box = Box::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(14)
+            .margin_top(16)
+            .margin_bottom(16)
+            .margin_start(16)
+            .margin_end(16)
+            .vexpand(true)
+            .build();
+
+        inner_box.append(&top_box);
+        inner_box.append(&filter_box);
+        inner_box.append(&scrolled);
+
+        let clamp = libadwaita::Clamp::builder()
+            .maximum_size(680)
+            .tightening_threshold(420)
+            .child(&inner_box)
+            .vexpand(true)
+            .build();
+
+        container.append(&clamp);
 
         let nodes = Rc::new(RefCell::new(Vec::new()));
         let selected_node_id = Rc::new(RefCell::new(None));

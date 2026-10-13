@@ -1,10 +1,10 @@
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Button, Image, Label, Orientation, Switch};
+use gtk4::{Align, Box, Button, Image, Label, Orientation, PolicyType, ScrolledWindow, Switch};
 use libadwaita::prelude::*;
-use libadwaita::{ActionRow, PreferencesGroup};
+use libadwaita::{ActionRow, Clamp, PreferencesGroup};
 
 pub struct DashboardView {
-    pub container: Box,
+    pub container: ScrolledWindow,
     pub status_badge: Label,
     pub server_name_label: Label,
     pub server_sub_label: Label,
@@ -17,19 +17,19 @@ pub struct DashboardView {
 
 impl DashboardView {
     pub fn new() -> Self {
-        let container = Box::builder()
+        let content_box = Box::builder()
             .orientation(Orientation::Vertical)
-            .spacing(20)
-            .margin_top(20)
+            .spacing(18)
+            .margin_top(16)
             .margin_bottom(24)
-            .margin_start(28)
-            .margin_end(28)
+            .margin_start(16)
+            .margin_end(16)
             .build();
 
         // 1. Futuristic Power Hub Card
         let power_card = Box::builder()
             .orientation(Orientation::Vertical)
-            .spacing(20)
+            .spacing(18)
             .halign(Align::Fill)
             .build();
         power_card.add_css_class("power-hub-card");
@@ -93,7 +93,7 @@ impl DashboardView {
         // 2. Telemetry Grid (Download & Upload Speeds)
         let telemetry_box = Box::builder()
             .orientation(Orientation::Horizontal)
-            .spacing(16)
+            .spacing(12)
             .homogeneous(true)
             .build();
 
@@ -190,12 +190,26 @@ impl DashboardView {
         sys_group.add(&auto_proxy_row);
 
         // Assemble all sections
-        container.append(&power_card);
-        container.append(&telemetry_box);
-        container.append(&sys_group);
+        content_box.append(&power_card);
+        content_box.append(&telemetry_box);
+        content_box.append(&sys_group);
+
+        // Fluid responsive Clamp
+        let clamp = Clamp::builder()
+            .maximum_size(680)
+            .tightening_threshold(420)
+            .child(&content_box)
+            .build();
+
+        let scrolled = ScrolledWindow::builder()
+            .hscrollbar_policy(PolicyType::Never)
+            .vscrollbar_policy(PolicyType::Automatic)
+            .child(&clamp)
+            .vexpand(true)
+            .build();
 
         Self {
-            container,
+            container: scrolled,
             status_badge,
             server_name_label,
             server_sub_label,

@@ -231,10 +231,16 @@ impl SettingsView {
         content_box.append(&update_group);
         content_box.append(&about_group);
 
+        let clamp = libadwaita::Clamp::builder()
+            .maximum_size(680)
+            .tightening_threshold(420)
+            .child(&content_box)
+            .build();
+
         let scrolled = ScrolledWindow::builder()
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .vscrollbar_policy(gtk4::PolicyType::Automatic)
-            .child(&content_box)
+            .child(&clamp)
             .vexpand(true)
             .build();
 

@@ -1,5 +1,6 @@
 pub mod dashboard;
 pub mod icons;
+pub mod logs;
 pub mod routing;
 pub mod servers;
 pub mod settings;
@@ -10,6 +11,7 @@ pub mod widget_audit;
 pub mod window;
 
 pub use dashboard::DashboardView;
+pub use logs::LogsView;
 pub use routing::RoutingView;
 pub use servers::ServersView;
 pub use settings::SettingsView;

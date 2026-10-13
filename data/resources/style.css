@@ -384,5 +384,40 @@
   box-shadow: 0 0 0 1px var(--accent-bg-color, var(--xdelta-brand));
 }
 
+/* ============================================================================
+   LOGS & DIAGNOSTICS VIEW
+   ============================================================================ */
+.logs-page-container {
+  background: transparent;
+}
+
+.logs-toolbar {
+  background-color: var(--card-bg-color);
+  border-radius: 12px;
+  padding: 6px;
+  border: 1px solid alpha(currentColor, 0.08);
+}
+
+.logs-console {
+  font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", "Monospace", monospace;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  background-color: color-mix(in srgb, var(--window-bg-color) 85%, black);
+  color: var(--window-fg-color);
+}
+
+.logs-scrolled-window {
+  border-radius: 12px;
+  margin-left: 16px;
+  margin-right: 16px;
+  border: 1px solid alpha(currentColor, 0.08);
+  background-color: color-mix(in srgb, var(--window-bg-color) 85%, black);
+}
+
+.logs-footer {
+  padding-top: 2px;
+}
+
+
 
 

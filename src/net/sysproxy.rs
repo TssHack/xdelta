@@ -20,18 +20,12 @@ const SCHEMA_SOCKS: &str = "org.gnome.system.proxy.socks";
 
 /// Ranges that must never be sent through the proxy.
 ///
-/// Private IPv4 space, loopback and link-local are included so that a manually
-/// configured proxy does not break local networking.
-pub const LAN_BYPASS_HOSTS: &[&str] = &[
-    "localhost",
-    "127.0.0.0/8",
-    "::1",
-    ".local",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "169.254.0.0/16",
-];
+/// Loopback is preserved so local daemons remain reachable. Private subnets
+/// (e.g. 10.0.0.0/8) are deliberately omitted from GNOME's ignore-hosts list
+/// because censorship systems commonly poison DNS to 10.x.x.x addresses, which
+/// would otherwise cause browsers to bypass the proxy and hit the censor directly.
+/// Private LAN routing is handled inside the core's routing rules instead.
+pub const LAN_BYPASS_HOSTS: &[&str] = &["localhost", "127.0.0.0/8", "::1"];
 
 /// A snapshot of the settings this module changes.
 ///
@@ -136,11 +130,15 @@ impl GnomeProxyManager {
             .set_int("port", socks_port as i32)
             .map_err(|e| e.to_string())?;
 
-        // Keep LAN traffic local. Existing entries are preserved so a user's own
-        // exclusions are not discarded.
+        // Keep loopback local and cleanse tainted private ranges (e.g. 10.0.0.0/8)
+        // that cause censorship DNS-poisoned results (10.10.34.35) to bypass the proxy.
         let mut hosts: Vec<String> = proxy
             .strv("ignore-hosts")
             .iter()
+            .filter(|s| {
+                let s = s.as_str();
+                !s.starts_with("10.") && !s.starts_with("172.") && !s.starts_with("192.168.")
+            })
             .map(|s| s.to_string())
             .collect();
         for entry in LAN_BYPASS_HOSTS {
@@ -273,10 +271,8 @@ mod tests {
     #[test]
     fn lan_bypass_covers_private_and_loopback_ranges() {
         assert!(LAN_BYPASS_HOSTS.contains(&"127.0.0.0/8"));
-        assert!(LAN_BYPASS_HOSTS.contains(&"10.0.0.0/8"));
-        assert!(LAN_BYPASS_HOSTS.contains(&"172.16.0.0/12"));
-        assert!(LAN_BYPASS_HOSTS.contains(&"192.168.0.0/16"));
         assert!(LAN_BYPASS_HOSTS.contains(&"localhost"));
+        assert!(LAN_BYPASS_HOSTS.contains(&"::1"));
     }
 
     /// Duplicate entries would bloat the GSettings value on every connect.

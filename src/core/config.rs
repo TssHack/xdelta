@@ -105,12 +105,17 @@ fn build_inbounds(profile: &ConnectionProfile) -> Result<Vec<Value>, String> {
                 "destOverride": ["http", "tls", "quic"]
             });
 
-            let http = json!({
+            let mut http = json!({
                 "tag": "http-in",
                 "port": profile.http_port,
                 "listen": "127.0.0.1",
                 "protocol": "http",
                 "settings": { "allowTransparent": false }
+            });
+            http["sniffing"] = json!({
+                "enabled": true,
+                "destOverride": ["http", "tls", "quic"],
+                "routeOnly": false
             });
 
             vec![socks, http]
@@ -133,6 +138,7 @@ fn build_tun_inbound(profile: &ConnectionProfile) -> Result<Value, String> {
 
     // A private /30 used only inside the tunnel; the .1 end is our gateway.
     let mut settings = json!({
+        "name": "xdelta0",
         "address": ["172.19.0.1/30"],
         "mtu": tun.mtu,
         "stack": tun.stack.as_str(),
@@ -169,7 +175,7 @@ fn build_routing(profile: &ConnectionProfile) -> Value {
 
     if opts.strategy == RoutingStrategy::Global {
         // Everything is proxied, so no bypass rules are emitted at all.
-        return json!({ "domainStrategy": "IPIfNonMatch", "rules": rules });
+        return json!({ "domainStrategy": "AsIs", "rules": rules });
     }
 
     // Rule mode: emit bypass rules in the order that matters most.
@@ -186,6 +192,11 @@ fn build_routing(profile: &ConnectionProfile) -> Value {
             "type": "field",
             "outboundTag": DIRECT_OUTBOUND_TAG,
             "domain": ["geosite:category-ir"]
+        }));
+        rules.push(json!({
+            "type": "field",
+            "outboundTag": DIRECT_OUTBOUND_TAG,
+            "ip": ["geoip:ir"]
         }));
     }
 
@@ -205,7 +216,7 @@ fn build_routing(profile: &ConnectionProfile) -> Value {
         }));
     }
 
-    json!({ "domainStrategy": "IPIfNonMatch", "rules": rules })
+    json!({ "domainStrategy": "AsIs", "rules": rules })
 }
 
 /// Builds DNS settings. TUN mode needs an explicit resolver, otherwise queries

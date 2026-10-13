@@ -1,4 +1,5 @@
 use crate::ui::dashboard::DashboardView;
+use crate::ui::logs::LogsView;
 use crate::ui::routing::RoutingView;
 use crate::ui::servers::ServersView;
 use crate::ui::settings::SettingsView;
@@ -22,6 +23,7 @@ pub struct MainWindow {
     pub servers_view: Rc<ServersView>,
     pub subscriptions_view: Rc<SubscriptionsView>,
     pub routing_view: Rc<RoutingView>,
+    pub logs_view: Rc<LogsView>,
     pub settings_view: Rc<SettingsView>,
     pub view_stack: ViewStack,
     pub view_switcher_bar: ViewSwitcherBar,
@@ -98,12 +100,14 @@ impl MainWindow {
         let servers_row = Self::create_nav_row("network-server-symbolic", "Servers");
         let subs_row = Self::create_nav_row("folder-download-symbolic", "Subscriptions");
         let routing_row = Self::create_nav_row("xdelta-routing-symbolic", "Routing");
+        let logs_row = Self::create_nav_row("utilities-terminal-symbolic", "Logs");
         let settings_row = Self::create_nav_row("preferences-system-symbolic", "Settings");
 
         nav_list.append(&dash_row);
         nav_list.append(&servers_row);
         nav_list.append(&subs_row);
         nav_list.append(&routing_row);
+        nav_list.append(&logs_row);
         nav_list.append(&settings_row);
 
         // Sidebar Footer (Active Core Indicator)
@@ -192,6 +196,7 @@ impl MainWindow {
         let servers_view = Rc::new(ServersView::new());
         let subscriptions_view = Rc::new(SubscriptionsView::new());
         let routing_view = Rc::new(RoutingView::new());
+        let logs_view = Rc::new(LogsView::new());
         let settings_view = Rc::new(SettingsView::new());
 
         let dash_page =
@@ -210,6 +215,9 @@ impl MainWindow {
 
         let route_page = view_stack.add_titled(&routing_view.container, Some("routing"), "Routing");
         route_page.set_icon_name(Some("xdelta-routing-symbolic"));
+
+        let logs_page = view_stack.add_titled(&logs_view.container, Some("logs"), "Logs");
+        logs_page.set_icon_name(Some("utilities-terminal-symbolic"));
 
         let sett_page =
             view_stack.add_titled(&settings_view.container, Some("settings"), "Settings");
@@ -235,6 +243,7 @@ impl MainWindow {
                     "servers" => title_stack_clone.set_label("Servers"),
                     "subscriptions" => title_stack_clone.set_label("Subscriptions"),
                     "routing" => title_stack_clone.set_label("Routing Rules"),
+                    "logs" => title_stack_clone.set_label("Diagnostics & Logs"),
                     "settings" => title_stack_clone.set_label("Settings"),
                     _ => {}
                 }
@@ -252,7 +261,8 @@ impl MainWindow {
                     1 => stack_clone.set_visible_child_name("servers"),
                     2 => stack_clone.set_visible_child_name("subscriptions"),
                     3 => stack_clone.set_visible_child_name("routing"),
-                    4 => stack_clone.set_visible_child_name("settings"),
+                    4 => stack_clone.set_visible_child_name("logs"),
+                    5 => stack_clone.set_visible_child_name("settings"),
                     _ => {}
                 }
 
@@ -321,6 +331,7 @@ impl MainWindow {
             servers_view,
             subscriptions_view,
             routing_view,
+            logs_view,
             settings_view,
             view_stack,
             view_switcher_bar,

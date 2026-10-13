@@ -123,7 +123,7 @@ impl CoreProcessManager {
 
                         // Forward the core's own log lines into the application
                         // log, so a single file tells the whole story.
-                        log::debug!("[{label}] {trimmed}");
+                        log::info!("[core] {trimmed}");
 
                         if let Ok(mut h) = history.lock() {
                             if h.len() == OUTPUT_HISTORY_LINES {

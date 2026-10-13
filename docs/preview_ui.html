@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, "Cantarell", sans-serif;
+    color: var(--foreground);
+    user-select: none;
+  }
+  .app-window {
+    display: flex;
+    width: 100%;
+    max-width: 860px;
+    height: 580px;
+    border-radius: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+  }
+  /* Sidebar */
+  .sidebar {
+    width: 230px;
+    background: rgba(0, 0, 0, 0.15);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .brand-area {
+    padding: 24px 20px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-icon {
+    font-size: 20px;
+    color: #3584e4;
+  }
+  .brand-name {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .badge-ver {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 0.7;
+    margin-left: auto;
+  }
+  .nav-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 12px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+    color: var(--muted-foreground);
+  }
+  .nav-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--foreground);
+  }
+  .nav-item.active {
+    background: rgba(53, 132, 228, 0.15);
+    color: #3584e4;
+  }
+  .sidebar-bottom {
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .core-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .dot-green {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #2ec27e;
+    box-shadow: 0 0 6px #2ec27e;
+  }
+
+  /* Content */
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .header-bar {
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-title {
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .main-dash {
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* Power Hub Card */
+  .power-hub {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 30px 24px 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .status-badge {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    transition: all 250ms ease;
+  }
+  .status-badge.disconnected {
+    background: rgba(128, 128, 128, 0.15);
+    color: var(--muted-foreground);
+  }
+  .status-badge.connected {
+    background: rgba(46, 194, 126, 0.15);
+    color: #2ec27e;
+    border: 1px solid #2ec27e;
+  }
+
+  /* Circular Power Button */
+  .power-btn {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    border: 4px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .power-btn:hover {
+    transform: scale(1.05);
+  }
+  .power-btn.disconnected:hover {
+    border-color: #3584e4;
+    box-shadow: 0 0 30px rgba(53, 132, 228, 0.4);
+  }
+  .power-btn.connected {
+    border-color: #2ec27e;
+    background: rgba(46, 194, 126, 0.12);
+    box-shadow: 0 0 35px rgba(46, 194, 126, 0.45);
+  }
+  .power-svg {
+    width: 52px;
+    height: 52px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.2;
+    transition: all 300ms ease;
+  }
+  .power-btn.disconnected .power-svg {
+    color: var(--muted-foreground);
+  }
+  .power-btn.connected .power-svg {
+    color: #2ec27e;
+    filter: drop-shadow(0 0 6px #2ec27e);
+  }
+
+  .server-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid var(--border);
+    padding: 8px 18px;
+    border-radius: 12px;
+  }
+  .server-title {
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .server-sub {
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+
+  /* Telemetry Grid */
+  .telemetry-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .telemetry-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .telemetry-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+    font-weight: 600;
+  }
+  .telemetry-val {
+    font-family: monospace;
+    font-size: 18px;
+    font-weight: 800;
+  }
+  .val-down { color: #2ec27e; }
+  .val-up { color: #3584e4; }
+  .telemetry-sub {
+    font-size: 10px;
+    color: var(--muted-foreground);
+  }
+
+  /* Settings row */
+  .sys-row {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sys-text {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .sys-sub {
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+  .switch {
+    width: 42px;
+    height: 24px;
+    background: #3584e4;
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    top: 3px;
+    right: 3px;
+    transition: all 150ms ease;
+  }
+</style>
+</head>
+<body>
+
+<div class="app-window">
+  <!-- Left Sidebar -->
+  <aside class="sidebar">
+    <div>
+      <div class="brand-area">
+        <span class="brand-icon">⚡</span>
+        <span class="brand-name">xdelta</span>
+        <span class="badge-ver">v1.0</span>
+      </div>
+      <nav class="nav-menu">
+        <div class="nav-item active">
+          <span>📊</span>
+          <span>Dashboard</span>
+        </div>
+        <div class="nav-item">
+          <span>🌐</span>
+          <span>Servers</span>
+        </div>
+        <div class="nav-item">
+          <span>📥</span>
+          <span>Subscriptions</span>
+        </div>
+        <div class="nav-item">
+          <span>🔀</span>
+          <span>Routing</span>
+        </div>
+        <div class="nav-item">
+          <span>⚙️</span>
+          <span>Settings</span>
+        </div>
+      </nav>
+    </div>
+    <div class="sidebar-footer">
+      <div class="core-pill">
+        <span class="dot-green"></span>
+        <span>Xray Core (Active)</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Right Content Area -->
+  <main class="content">
+    <div class="header-bar">
+      <div class="page-title">Dashboard</div>
+      <div style="font-size: 12px; opacity: 0.6;">System Proxy: Active</div>
+    </div>
+
+    <div class="main-dash">
+      <!-- Power Hub Card -->
+      <div class="power-hub">
+        <div id="statusBadge" class="status-badge disconnected">DISCONNECTED</div>
+
+        <div id="powerBtn" class="power-btn disconnected" onclick="toggleConnect()">
+          <svg class="power-svg" viewBox="0 0 24 24">
+            <path d="M12 2v10M18.36 6.64A9 9 0 1 1 5.64 6.64"/>
+          </svg>
+        </div>
+
+        <div class="server-banner">
+          <span style="font-size: 18px;">🇩🇪</span>
+          <div>
+            <div class="server-title">Frankfurt 01 (Fast)</div>
+            <div id="serverSub" class="server-sub">Click button to establish tunnel</div>
+          </div>
+          <span style="font-size: 10px; font-weight: 800; background: rgba(53,132,228,0.2); color: #3584e4; padding: 3px 6px; border-radius: 4px; margin-left: 8px;">VLESS</span>
+        </div>
+      </div>
+
+      <!-- Telemetry Cards -->
+      <div class="telemetry-row">
+        <div class="telemetry-card">
+          <div class="telemetry-header">
+            <span>↓</span>
+            <span>DOWNLOAD RATE</span>
+          </div>
+          <div id="downSpeed" class="telemetry-val val-down">0.00 KB/s</div>
+          <div class="telemetry-sub">Session: 0.0 MB</div>
+        </div>
+
+        <div class="telemetry-card">
+          <div class="telemetry-header">
+            <span>↑</span>
+            <span>UPLOAD RATE</span>
+          </div>
+          <div id="upSpeed" class="telemetry-val val-up">0.00 KB/s</div>
+          <div class="telemetry-sub">Session: 0.0 MB</div>
+        </div>
+      </div>
+
+      <!-- System Integration -->
+      <div class="sys-row">
+        <div>
+          <div class="sys-text">GNOME Desktop System Proxy</div>
+          <div class="sys-sub">Automatically configure SOCKS5 (10808) & HTTP (10809)</div>
+        </div>
+        <div class="switch"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  let connected = false;
+  function toggleConnect() {
+    connected = !connected;
+    const btn = document.getElementById("powerBtn");
+    const badge = document.getElementById("statusBadge");
+    const sub = document.getElementById("serverSub");
+    const down = document.getElementById("downSpeed");
+    const up = document.getElementById("upSpeed");
+
+    if (connected) {
+      btn.className = "power-btn connected";
+      badge.className = "status-badge connected";
+      badge.textContent = "SECURE & CONNECTED";
+      sub.textContent = "Tunnel active • 142 ms RTT";
+      down.textContent = "5.24 MB/s";
+      up.textContent = "384 KB/s";
+    } else {
+      btn.className = "power-btn disconnected";
+      badge.className = "status-badge disconnected";
+      badge.textContent = "DISCONNECTED";
+      sub.textContent = "Click button to establish tunnel";
+      down.textContent = "0.00 KB/s";
+      up.textContent = "0.00 KB/s";
+    }
+  }
+</script>
+
+</body>
+</html>

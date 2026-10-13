@@ -72,29 +72,41 @@ impl App {
 
             main_window.servers_view.set_nodes(sample_nodes);
 
-            // Wire Connect Button toggle logic
+            // Wire Iconic Circular Power Button logic
             let is_connected = Rc::new(RefCell::new(false));
-            let status_label = main_window.dashboard_view.status_label.clone();
-            let sub_status_label = main_window.dashboard_view.sub_status_label.clone();
-            let conn_btn = main_window.dashboard_view.connect_button.clone();
+            let status_badge = main_window.dashboard_view.status_badge.clone();
+            let server_sub_label = main_window.dashboard_view.server_sub_label.clone();
+            let power_btn = main_window.dashboard_view.power_button.clone();
+            let down_label = main_window.dashboard_view.download_speed_label.clone();
+            let up_label = main_window.dashboard_view.upload_speed_label.clone();
 
             let is_conn_clone = is_connected.clone();
-            conn_btn.connect_clicked(move |btn| {
+            power_btn.connect_clicked(move |btn| {
                 let mut conn = is_conn_clone.borrow_mut();
                 *conn = !*conn;
 
                 if *conn {
-                    btn.set_label("Disconnect");
-                    btn.remove_css_class("suggested-action");
-                    btn.add_css_class("destructive-action");
-                    status_label.set_label("Connected");
-                    sub_status_label.set_label("Active Server: Frankfurt 01 (Fast) • 142 ms");
+                    btn.remove_css_class("power-btn-disconnected");
+                    btn.add_css_class("power-btn-connected");
+
+                    status_badge.set_label("CONNECTED");
+                    status_badge.remove_css_class("status-disconnected");
+                    status_badge.add_css_class("status-connected");
+
+                    server_sub_label.set_label("Secure tunnel active • 142 ms");
+                    down_label.set_label("4.82 MB/s");
+                    up_label.set_label("320 KB/s");
                 } else {
-                    btn.set_label("Connect");
-                    btn.remove_css_class("destructive-action");
-                    btn.add_css_class("suggested-action");
-                    status_label.set_label("Disconnected");
-                    sub_status_label.set_label("Select a server to establish connection");
+                    btn.remove_css_class("power-btn-connected");
+                    btn.add_css_class("power-btn-disconnected");
+
+                    status_badge.set_label("DISCONNECTED");
+                    status_badge.remove_css_class("status-connected");
+                    status_badge.add_css_class("status-disconnected");
+
+                    server_sub_label.set_label("Click power button to connect");
+                    down_label.set_label("0.00 KB/s");
+                    up_label.set_label("0.00 KB/s");
                 }
             });
 

@@ -9,8 +9,7 @@ use gtk4::{
     StackTransitionType,
 };
 use libadwaita::prelude::*;
-use libadwaita::Application;
-use libadwaita::ApplicationWindow;
+use libadwaita::{Application, ApplicationWindow};
 use std::rc::Rc;
 
 pub struct MainWindow {

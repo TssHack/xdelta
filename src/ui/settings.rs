@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Align, Box, Entry, Label, Orientation, ScrolledWindow, Switch};
+use gtk4::{Align, Box, Button, Entry, Label, Orientation, ScrolledWindow, Switch};
 use libadwaita::prelude::*;
 use libadwaita::{ActionRow, ComboRow, PreferencesGroup, StyleManager};
 
@@ -140,7 +140,82 @@ impl SettingsView {
 
         theme_group.add(&theme_row);
 
-        // 5. About
+        // 5. Software Updates
+        let update_group = PreferencesGroup::builder()
+            .title("Software Updates")
+            .description("Check for new releases and security patches from GitHub")
+            .build();
+
+        let check_update_btn = Button::builder()
+            .label("Check Now")
+            .icon_name("software-update-available-symbolic")
+            .valign(Align::Center)
+            .build();
+        check_update_btn.add_css_class("suggested-action");
+
+        let update_status_badge = Label::builder().label("Up to date").build();
+        update_status_badge.add_css_class("badge-latency");
+        update_status_badge.add_css_class("latency-good");
+
+        let update_row = ActionRow::builder()
+            .title("Current Version")
+            .subtitle(&format!("xdelta v{} (Installed)", crate::updater::CURRENT_VERSION))
+            .build();
+        update_row.add_prefix(&gtk4::Image::from_icon_name("software-update-available-symbolic"));
+        update_row.add_suffix(&update_status_badge);
+        update_row.add_suffix(&check_update_btn);
+
+        let badge_clone = update_status_badge.clone();
+        let btn_clone = check_update_btn.clone();
+        check_update_btn.connect_clicked(move |_| {
+            let badge = badge_clone.clone();
+            let btn = btn_clone.clone();
+            btn.set_sensitive(false);
+            btn.set_label("Checking...");
+            badge.set_label("Checking...");
+
+            gtk4::glib::MainContext::default().spawn_local(async move {
+                match crate::updater::check_for_updates().await {
+                    Ok(info) => {
+                        btn.set_sensitive(true);
+                        btn.set_label("Check Now");
+                        if info.has_update {
+                            badge.set_label(&format!("New: v{}", info.version));
+                            badge.remove_css_class("latency-good");
+                            badge.add_css_class("latency-poor");
+                        } else {
+                            badge.set_label("Up to date");
+                            badge.remove_css_class("latency-poor");
+                            badge.add_css_class("latency-good");
+                        }
+                    }
+                    Err(_) => {
+                        btn.set_sensitive(true);
+                        btn.set_label("Retry");
+                        badge.set_label("Check failed");
+                    }
+                }
+            });
+        });
+
+        let releases_link_btn = gtk4::LinkButton::builder()
+            .label("GitHub Releases")
+            .uri("https://github.com/TssHack/xdelta/releases")
+            .valign(Align::Center)
+            .build();
+
+        let releases_row = ActionRow::builder()
+            .title("Release Channel")
+            .subtitle("Official repository releases")
+            .activatable_widget(&releases_link_btn)
+            .build();
+        releases_row.add_prefix(&gtk4::Image::from_icon_name("send-to-symbolic"));
+        releases_row.add_suffix(&releases_link_btn);
+
+        update_group.add(&update_row);
+        update_group.add(&releases_row);
+
+        // 6. About
         let about_group = PreferencesGroup::builder().title("About xdelta").build();
         let about_row = ActionRow::builder()
             .title("xdelta Client")
@@ -153,6 +228,7 @@ impl SettingsView {
         content_box.append(&ports_group);
         content_box.append(&sys_group);
         content_box.append(&theme_group);
+        content_box.append(&update_group);
         content_box.append(&about_group);
 
         let scrolled = ScrolledWindow::builder()

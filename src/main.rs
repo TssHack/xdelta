@@ -4,6 +4,7 @@ pub mod model;
 pub mod net;
 pub mod parser;
 pub mod ui;
+pub mod updater;
 
 use app::App;
 

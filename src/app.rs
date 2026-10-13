@@ -29,8 +29,7 @@ fn describe_latency(node: &Node) -> String {
 /// Two concurrent passes would contend for the same probe ports and overwrite
 /// each other's results, and the subscription loader can legitimately reach the
 /// probe path twice (once for the cache, once after the network refresh).
-static PROBE_IN_FLIGHT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static PROBE_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Result of the background probe started by the fastest-server button.
 enum FastestOutcome {
@@ -342,9 +341,19 @@ impl App {
                     };
 
                     let Some(node) = node else {
-                        view.render_error(
-                            "No server selected. Add a subscription or paste a config first.",
-                        );
+                        // Distinguish the two very different causes: an empty
+                        // list (the server test found nothing, or it has not run
+                        // yet) versus no selection in a non-empty list. Telling
+                        // a user who has a subscription to "add a subscription"
+                        // is actively misleading.
+                        let has_nodes = !servers_view.nodes.borrow().is_empty();
+                        view.render_error(if has_nodes {
+                            "Select a server in the list first."
+                        } else {
+                            "No servers available yet. The list is still loading, \
+                             or the server test found none that work — use \
+                             \"Connect to Fastest\" to test again."
+                        });
                         return;
                     };
 

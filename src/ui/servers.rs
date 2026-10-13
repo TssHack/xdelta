@@ -143,9 +143,21 @@ impl ServersView {
     }
 
     pub fn set_nodes(&self, nodes: Vec<Node>) {
-        if self.selected_node_id.borrow().is_none() && !nodes.is_empty() {
-            *self.selected_node_id.borrow_mut() = Some(nodes[0].id.clone());
+        // Drop a selection that no longer exists in the new list. Leaving a
+        // dangling id behind is what made Connect report "no server selected"
+        // while a list was plainly on screen.
+        {
+            let mut selected = self.selected_node_id.borrow_mut();
+            let still_present = selected
+                .as_ref()
+                .map(|id| nodes.iter().any(|n| &n.id == id))
+                .unwrap_or(false);
+
+            if !still_present {
+                *selected = nodes.first().map(|n| n.id.clone());
+            }
         }
+
         *self.nodes.borrow_mut() = nodes.clone();
         self.render_nodes(&nodes);
 

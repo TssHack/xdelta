@@ -397,7 +397,10 @@ pub fn clean_stale_probe_processes() {
     {
         if let Ok(entries) = std::fs::read_dir("/proc") {
             for entry in entries.flatten() {
-                let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<i32>().ok())
+                let Some(pid) = entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|s| s.parse::<i32>().ok())
                 else {
                     continue;
                 };
@@ -589,14 +592,37 @@ pub fn rank_nodes(nodes: &mut [Node]) {
 /// Number of servers shown for the bundled subscription.
 pub const TOP_SERVERS_SHOWN: usize = 30;
 
-/// Truncates to the servers worth showing, preserving order.
+/// Builds the list to display, never returning an empty result when there is
+/// anything at all to show.
+///
+/// The previous version returned *only* verified-working servers. Measured
+/// liveness on the bundled subscription is around 5%, and a random batch can
+/// contain none, so that rule emptied the list exactly when a fallback mattered
+/// — and the user was then told to "add a subscription" they already had.
+///
+/// The rules, in order:
+///
+/// 1. Working servers first, fastest first.
+/// 2. If fewer than `limit` of those exist, fill the remainder with untested
+///    candidates, so a list is always available to choose from.
+/// 3. Known-failed servers are never shown; they cannot work.
 pub fn top_servers(nodes: &[Node], limit: usize) -> Vec<Node> {
-    nodes
-        .iter()
-        .filter(|n| n.verified == Some(true))
-        .take(limit)
-        .cloned()
-        .collect()
+    let mut working: Vec<&Node> = nodes.iter().filter(|n| n.verified == Some(true)).collect();
+    let mut untested: Vec<&Node> = nodes.iter().filter(|n| n.verified.is_none()).collect();
+
+    // Within each group, fastest first; untested entries have no latency and
+    // keep their existing order.
+    working.sort_by_key(|n| n.sort_latency());
+    untested.sort_by_key(|n| n.sort_latency());
+
+    let mut chosen: Vec<Node> = working.into_iter().take(limit).cloned().collect();
+
+    if chosen.len() < limit {
+        let remaining = limit - chosen.len();
+        chosen.extend(untested.into_iter().take(remaining).cloned());
+    }
+
+    chosen
 }
 
 #[cfg(test)]
@@ -760,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn top_servers_returns_only_working_ones() {
+    fn top_servers_returns_only_working_ones_when_enough_exist() {
         let mut nodes = Vec::new();
         for i in 0..40 {
             let mut n = ss_node(&format!("n{i}"), "1.1.1.1", 4000 + i, "aes-256-gcm");
@@ -777,12 +803,58 @@ mod tests {
         assert!(top.iter().all(|n| n.verified == Some(true)));
     }
 
+    /// The regression that made Connect fail: with few working servers the list
+    /// was emptied, leaving nothing to select. Untested candidates must fill the
+    /// remainder so a choice always exists.
     #[test]
-    fn top_servers_returns_fewer_when_not_enough_work() {
-        let mut only_one = ss_node("a", "1.1.1.1", 443, "aes-256-gcm");
-        only_one.verified = Some(true);
-        let top = top_servers(&[only_one], TOP_SERVERS_SHOWN);
-        assert_eq!(top.len(), 1);
+    fn top_servers_fills_with_untested_when_working_ones_are_scarce() {
+        let mut nodes = Vec::new();
+
+        // Only two confirmed-working servers.
+        for i in 0..2 {
+            let mut n = ss_node(&format!("work{i}"), "1.1.1.1", 4000 + i, "aes-256-gcm");
+            n.verified = Some(true);
+            n.latency_ms = Some(50 + i as u32);
+            nodes.push(n);
+        }
+        // Plus untested candidates.
+        for i in 0..10 {
+            let n = ss_node(&format!("new{i}"), "2.2.2.2", 5000 + i, "aes-256-gcm");
+            nodes.push(n);
+        }
+
+        let top = top_servers(&nodes, TOP_SERVERS_SHOWN);
+        assert_eq!(
+            top.len(),
+            12,
+            "the list must not be truncated to the working ones"
+        );
+
+        // Working servers still come first.
+        assert!(top[0].verified == Some(true));
+        assert!(top[1].verified == Some(true));
+        assert!(top[2].verified.is_none());
+    }
+
+    /// A list that contains only failures must come back empty rather than
+    /// offering servers that cannot work.
+    #[test]
+    fn top_servers_excludes_known_failures_even_when_filling() {
+        let mut failed = ss_node("bad", "9.9.9.9", 443, "aes-256-gcm");
+        failed.verified = Some(false);
+
+        let top = top_servers(&[failed], TOP_SERVERS_SHOWN);
+        assert!(
+            top.is_empty(),
+            "a known-failed server must never be offered"
+        );
+    }
+
+    /// With nothing verified and nothing untested, the result is empty; the UI
+    /// is responsible for explaining that, which it now does.
+    #[test]
+    fn top_servers_is_empty_for_an_empty_input() {
+        assert!(top_servers(&[], TOP_SERVERS_SHOWN).is_empty());
     }
 
     #[test]

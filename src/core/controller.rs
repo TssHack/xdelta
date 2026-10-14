@@ -23,11 +23,11 @@ pub struct TransitionOutcome {
 }
 
 impl TransitionOutcome {
-    fn ok(state: ConnectionState) -> Self {
+    pub fn ok(state: ConnectionState) -> Self {
         Self { state, note: None }
     }
 
-    fn with_note(state: ConnectionState, note: impl Into<String>) -> Self {
+    pub fn with_note(state: ConnectionState, note: impl Into<String>) -> Self {
         Self {
             state,
             note: Some(note.into()),
@@ -110,6 +110,52 @@ impl ConnectionController {
             Ok(binary) => tun::check_readiness(&binary),
             Err(e) => TunReadiness::Unsupported(e),
         }
+    }
+
+    /// Pre-validates, starts and verifies the core process on a background thread.
+    pub fn start_and_verify(
+        profile: &ConnectionProfile,
+    ) -> Result<(CoreProcessManager, PathBuf, Option<u32>), String> {
+        if profile.mode == ConnectionMode::Tun {
+            let binary = CoreProcessManager::find_xray_binary()?;
+            match tun::check_readiness(&binary) {
+                TunReadiness::Ready => {}
+                readiness => {
+                    return Err(format!("TUN unavailable: {}", readiness.message()));
+                }
+            }
+        }
+
+        let config = generate_xray_config(profile)?;
+        let path = write_config_to_temp_file(&config)?;
+        let mut process = CoreProcessManager::start(&path)?;
+
+        if let Err(e) = process.wait_until_ready(std::time::Duration::from_secs(3)) {
+            let _ = process.stop();
+            let _ = std::fs::remove_file(&path);
+            return Err(e);
+        }
+
+        let mut latency = None;
+        if profile.mode == ConnectionMode::SystemProxy {
+            match crate::net::probe::verify_connection(
+                profile.socks_port,
+                std::time::Duration::from_secs(6),
+            ) {
+                Ok(lat) => {
+                    latency = Some(lat);
+                }
+                Err(e) => {
+                    let _ = process.stop();
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!(
+                        "Server reachable but proxy verification failed: {e}"
+                    ));
+                }
+            }
+        }
+
+        Ok((process, path, latency))
     }
 
     /// Brings a connection up.
@@ -364,6 +410,103 @@ impl ConnectionController {
                 None
             }
         }
+    }
+
+    /// Updates traffic stats with counters queried from a background task.
+    pub fn apply_counters(&mut self, counters: TrafficCounters) -> (TrafficRates, TrafficCounters) {
+        let rates = self.sampler.update(counters);
+        (rates, counters)
+    }
+
+    /// Live ports tuple: `(api_port, socks_port, http_port)`.
+    pub fn live_ports(&self) -> (u16, u16, u16) {
+        (self.api_port, self.socks_port, self.http_port)
+    }
+
+    /// Marks the start of a connection attempt.
+    pub fn start_connecting(&mut self) -> Result<(), String> {
+        if !self.state.can_connect() {
+            return Err("a connection is already in progress".to_string());
+        }
+        self.state = ConnectionState::Connecting;
+        Ok(())
+    }
+
+    /// Completes the connection after the background worker started the core.
+    pub fn finish_connect(
+        &mut self,
+        profile: &ConnectionProfile,
+        process: CoreProcessManager,
+        config_path: PathBuf,
+        verified_latency: Option<u32>,
+        auto_system_proxy: bool,
+    ) -> TransitionOutcome {
+        self.process = Some(process);
+        self.config_path = Some(config_path);
+        self.api_port = profile.api_port;
+        self.socks_port = profile.socks_port;
+        self.http_port = profile.http_port;
+        self.active_mode = Some(profile.mode);
+        self.sampler.reset();
+        self.last_health_check = None;
+        self.active_node = Some(profile.node.clone());
+
+        let mut note = verified_latency.map(|l| format!("verified in {l} ms"));
+
+        // In TUN mode, install the system routes so traffic actually flows into xdelta0
+        if profile.mode == ConnectionMode::Tun {
+            if let Err(e) = crate::net::tun::apply_tun_routes("xdelta0", &profile.node.server) {
+                log::warn!("Could not apply TUN system routes: {e}");
+                let msg = format!("TUN routing: {e}");
+                note = Some(match note {
+                    Some(existing) => format!("{existing}; {msg}"),
+                    None => msg,
+                });
+            }
+        }
+
+        // Apply desktop proxy whenever auto_system_proxy is enabled.
+        if auto_system_proxy {
+            match GnomeProxyManager::snapshot() {
+                Ok(snapshot) => {
+                    self.proxy_snapshot = Some(snapshot);
+                    if let Err(e) = GnomeProxyManager::enable(profile.http_port, profile.socks_port)
+                    {
+                        let msg = format!("system proxy not applied: {e}");
+                        note = Some(match note {
+                            Some(existing) => format!("{existing}; {msg}"),
+                            None => msg,
+                        });
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("system proxy not applied: {e}");
+                    note = Some(match note {
+                        Some(existing) => format!("{existing}; {msg}"),
+                        None => msg,
+                    });
+                }
+            }
+        }
+
+        self.state = ConnectionState::Connected;
+        log::info!(
+            "connected: {} ({})",
+            profile.node.name,
+            note.as_deref().unwrap_or("no note")
+        );
+
+        match note {
+            Some(note) => TransitionOutcome::with_note(self.state.clone(), note),
+            None => TransitionOutcome::ok(self.state.clone()),
+        }
+    }
+
+    /// Sets the connection state to failed after an error.
+    pub fn fail_connect(&mut self, error: String) -> TransitionOutcome {
+        self.teardown_after_failed_verification();
+        self.state = ConnectionState::Failed(error.clone());
+        TransitionOutcome::with_note(self.state.clone(), error)
     }
 
     /// Confirms the core is still running; used by the UI tick.

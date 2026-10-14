@@ -22,6 +22,8 @@ impl RoutingView {
             .margin_end(28)
             .build();
 
+        let saved_conn = crate::core::persist::load_connection();
+
         // 1. Preset Routing Mode
         let mode_group = PreferencesGroup::builder()
             .title("Routing Strategy")
@@ -34,10 +36,16 @@ impl RoutingView {
             "Direct (Bypass All)",
         ]);
 
+        let strategy_selected = match saved_conn.routing_strategy.as_str() {
+            "global" => 1,
+            "direct" => 2,
+            _ => 0,
+        };
+
         let routing_mode_row = ComboRow::builder()
             .title("Traffic Strategy")
             .model(&modes)
-            .selected(0)
+            .selected(strategy_selected)
             .build();
         routing_mode_row.add_prefix(&gtk4::Image::from_icon_name("xdelta-routing-symbolic"));
 
@@ -49,7 +57,10 @@ impl RoutingView {
             .description("Built-in categorization using GeoIP and GeoSite databases")
             .build();
 
-        let bypass_iran_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let bypass_iran_switch = Switch::builder()
+            .active(saved_conn.bypass_iran)
+            .valign(Align::Center)
+            .build();
         let bypass_row = ActionRow::builder()
             .title("Bypass Iran &amp; LAN")
             .subtitle("Route domestic domains (.ir) and local CIDRs directly")
@@ -58,7 +69,10 @@ impl RoutingView {
         bypass_row.add_prefix(&gtk4::Image::from_icon_name("network-vpn-symbolic"));
         bypass_row.add_suffix(&bypass_iran_switch);
 
-        let block_ads_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let block_ads_switch = Switch::builder()
+            .active(saved_conn.block_ads)
+            .valign(Align::Center)
+            .build();
         let ads_row = ActionRow::builder()
             .title("Block Advertisements &amp; Trackers")
             .subtitle("Drop traffic destined for known ad and telemetry domains")
@@ -76,7 +90,9 @@ impl RoutingView {
             .description("Explicitly route specific domains directly or through the proxy")
             .build();
 
+        let direct_domains_str = saved_conn.direct_domains.join(", ");
         let direct_domain_entry = Entry::builder()
+            .text(&direct_domains_str)
             .placeholder_text("e.g. domain:local.net, mycompany.internal")
             .hexpand(true)
             .valign(Align::Center)
@@ -91,6 +107,40 @@ impl RoutingView {
         custom_direct_row.add_suffix(&direct_domain_entry);
 
         custom_group.add(&custom_direct_row);
+
+        // Auto-save changes to persistent settings
+        let strategy_c = routing_mode_row.clone();
+        let bypass_c = bypass_iran_switch.clone();
+        let ads_c = block_ads_switch.clone();
+        let domains_c = direct_domain_entry.clone();
+
+        let save_routing = move || {
+            let mut s = crate::core::persist::load_connection();
+            s.routing_strategy = match strategy_c.selected() {
+                1 => "global".into(),
+                2 => "direct".into(),
+                _ => "rule".into(),
+            };
+            s.bypass_iran = bypass_c.is_active();
+            s.block_ads = ads_c.is_active();
+            let text = domains_c.text().to_string();
+            s.direct_domains = text
+                .split(',')
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .collect();
+            crate::core::persist::save_connection(&s);
+        };
+
+        let sr = std::rc::Rc::new(save_routing);
+        let sr1 = sr.clone();
+        routing_mode_row.connect_selected_notify(move |_| sr1());
+        let sr2 = sr.clone();
+        bypass_iran_switch.connect_active_notify(move |_| sr2());
+        let sr3 = sr.clone();
+        block_ads_switch.connect_active_notify(move |_| sr3());
+        let sr4 = sr.clone();
+        direct_domain_entry.connect_changed(move |_| sr4());
 
         content_box.append(&mode_group);
         content_box.append(&rules_group);

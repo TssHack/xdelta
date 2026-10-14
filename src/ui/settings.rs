@@ -152,13 +152,15 @@ impl SettingsView {
         core_group.add(&binary_row);
 
         // 2. Inbound Network Ports
+        let saved_conn = crate::core::persist::load_connection();
+
         let ports_group = PreferencesGroup::builder()
             .title("Local Inbound Endpoints")
             .description("Define local listener ports for desktop traffic")
             .build();
 
         let socks_port_entry = Entry::builder()
-            .text("10808")
+            .text(saved_conn.socks_port.to_string())
             .max_width_chars(6)
             .valign(Align::Center)
             .build();
@@ -171,7 +173,7 @@ impl SettingsView {
         socks_row.add_suffix(&socks_port_entry);
 
         let http_port_entry = Entry::builder()
-            .text("10809")
+            .text(saved_conn.http_port.to_string())
             .max_width_chars(6)
             .valign(Align::Center)
             .build();
@@ -190,25 +192,31 @@ impl SettingsView {
             .build();
 
         let mode_model = gtk4::StringList::new(&["System Proxy (userspace)", "TUN (whole system)"]);
+        let mode_selected = if saved_conn.mode == "tun" { 1 } else { 0 };
         let connection_mode_row = ComboRow::builder()
             .title("Capture Mode")
             .subtitle("TUN requires a one-time permission grant")
             .model(&mode_model)
-            .selected(0)
+            .selected(mode_selected)
             .build();
         connection_mode_row.add_prefix(&gtk4::Image::from_icon_name("network-vpn-symbolic"));
 
         let tun_stack_model =
             gtk4::StringList::new(&["System (kernel)", "gVisor (userspace)", "Mixed"]);
+        let stack_selected = match saved_conn.tun_stack.as_str() {
+            "gvisor" => 1,
+            "mixed" => 2,
+            _ => 0,
+        };
         let tun_stack_row = ComboRow::builder()
             .title("TUN Stack")
             .model(&tun_stack_model)
-            .selected(0)
+            .selected(stack_selected)
             .build();
         tun_stack_row.add_prefix(&gtk4::Image::from_icon_name("network-wired-symbolic"));
 
         let tun_mtu_entry = Entry::builder()
-            .text("1500")
+            .text(saved_conn.tun_mtu.to_string())
             .max_width_chars(6)
             .valign(Align::Center)
             .build();
@@ -219,8 +227,13 @@ impl SettingsView {
             .build();
         mtu_row.add_suffix(&tun_mtu_entry);
 
+        let tun_dns_str = if saved_conn.tun_dns.is_empty() {
+            "1.1.1.1, 8.8.8.8".to_string()
+        } else {
+            saved_conn.tun_dns.join(", ")
+        };
         let tun_dns_entry = Entry::builder()
-            .text("1.1.1.1, 8.8.8.8")
+            .text(&tun_dns_str)
             .hexpand(true)
             .valign(Align::Center)
             .build();
@@ -231,7 +244,10 @@ impl SettingsView {
             .build();
         dns_row.add_suffix(&tun_dns_entry);
 
-        let tun_auto_route_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let tun_auto_route_switch = Switch::builder()
+            .active(saved_conn.tun_auto_route)
+            .valign(Align::Center)
+            .build();
         let auto_route_row = ActionRow::builder()
             .title("Install Default Routes")
             .subtitle("Let the core route system traffic through the tunnel")
@@ -240,7 +256,7 @@ impl SettingsView {
         auto_route_row.add_suffix(&tun_auto_route_switch);
 
         let tun_strict_route_switch = Switch::builder()
-            .active(false)
+            .active(saved_conn.tun_strict_route)
             .valign(Align::Center)
             .build();
         let strict_route_row = ActionRow::builder()
@@ -298,10 +314,15 @@ impl SettingsView {
             "Global (proxy everything)",
             "Direct (proxy nothing)",
         ]);
+        let strategy_selected = match saved_conn.routing_strategy.as_str() {
+            "global" => 1,
+            "direct" => 2,
+            _ => 0,
+        };
         let routing_strategy_row = ComboRow::builder()
             .title("Strategy")
             .model(&strategy_model)
-            .selected(0)
+            .selected(strategy_selected)
             .build();
         routing_strategy_row.add_prefix(&gtk4::Image::from_icon_name("xdelta-routing-symbolic"));
 
@@ -316,7 +337,10 @@ impl SettingsView {
             .description("System proxy and desktop environment hooks")
             .build();
 
-        let auto_proxy_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let auto_proxy_switch = Switch::builder()
+            .active(saved_conn.auto_system_proxy)
+            .valign(Align::Center)
+            .build();
         let auto_proxy_row = ActionRow::builder()
             .title("Auto System Proxy")
             .subtitle("Automatically set GNOME proxy settings upon connection")
@@ -336,7 +360,10 @@ impl SettingsView {
         clear_row.add_prefix(&gtk4::Image::from_icon_name("system-shutdown-symbolic"));
         clear_row.add_suffix(&clear_on_exit);
 
-        let minimize_to_tray_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let minimize_to_tray_switch = Switch::builder()
+            .active(saved_conn.minimize_to_tray)
+            .valign(Align::Center)
+            .build();
         let minimize_row = ActionRow::builder()
             .title("Minimize to System Tray on Close")
             .subtitle("Keep proxy running in the background when window is closed")
@@ -713,6 +740,86 @@ impl SettingsView {
         content_box.append(&theme_group);
         content_box.append(&update_group);
         content_box.append(&about_group);
+
+        // Persist connection settings whenever controls change
+        let socks_clone = socks_port_entry.clone();
+        let http_clone = http_port_entry.clone();
+        let mode_clone = connection_mode_row.clone();
+        let stack_clone = tun_stack_row.clone();
+        let mtu_clone = tun_mtu_entry.clone();
+        let dns_clone = tun_dns_entry.clone();
+        let auto_route_clone = tun_auto_route_switch.clone();
+        let strict_route_clone = tun_strict_route_switch.clone();
+        let proxy_clone = auto_proxy_switch.clone();
+        let tray_clone = minimize_to_tray_switch.clone();
+        let strategy_clone = routing_strategy_row.clone();
+
+        let save_all = move || {
+            let mut s = crate::core::persist::load_connection();
+            if let Ok(p) = socks_clone.text().trim().parse::<u16>() {
+                if p > 0 {
+                    s.socks_port = p;
+                }
+            }
+            if let Ok(p) = http_clone.text().trim().parse::<u16>() {
+                if p > 0 {
+                    s.http_port = p;
+                }
+            }
+            s.mode = if mode_clone.selected() == 1 {
+                "tun".into()
+            } else {
+                "system_proxy".into()
+            };
+            s.tun_stack = match stack_clone.selected() {
+                1 => "gvisor".into(),
+                2 => "mixed".into(),
+                _ => "system".into(),
+            };
+            if let Ok(mtu) = mtu_clone.text().trim().parse::<u16>() {
+                s.tun_mtu = mtu;
+            }
+            let dns_text = dns_clone.text().to_string();
+            s.tun_dns = dns_text
+                .split(',')
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .collect();
+            s.tun_auto_route = auto_route_clone.is_active();
+            s.tun_strict_route = strict_route_clone.is_active();
+            s.auto_system_proxy = proxy_clone.is_active();
+            s.minimize_to_tray = tray_clone.is_active();
+            s.routing_strategy = match strategy_clone.selected() {
+                1 => "global".into(),
+                2 => "direct".into(),
+                _ => "rule".into(),
+            };
+            crate::core::persist::save_connection(&s);
+        };
+
+        let sa = Rc::new(save_all);
+        for entry in [
+            &socks_port_entry,
+            &http_port_entry,
+            &tun_mtu_entry,
+            &tun_dns_entry,
+        ] {
+            let sa_c = sa.clone();
+            entry.connect_changed(move |_| sa_c());
+        }
+        for combo in [&connection_mode_row, &tun_stack_row, &routing_strategy_row] {
+            let sa_c = sa.clone();
+            combo.connect_selected_notify(move |_| sa_c());
+        }
+        for sw in [
+            &tun_auto_route_switch,
+            &tun_strict_route_switch,
+            &auto_proxy_switch,
+            &minimize_to_tray_switch,
+        ] {
+            let sa_c = sa.clone();
+            sw.connect_active_notify(move |_| sa_c());
+        }
 
         let clamp = libadwaita::Clamp::builder()
             .maximum_size(680)

@@ -175,8 +175,16 @@ impl ServersView {
     }
 
     pub fn render_nodes(&self, nodes: &[Node]) {
-        while let Some(child) = self.list_box.first_child() {
-            self.list_box.remove(&child);
+        Self::render_nodes_into(&self.list_box, nodes, &self.selected_node_id);
+    }
+
+    fn render_nodes_into(
+        list_box: &ListBox,
+        nodes: &[Node],
+        selected_id_cell: &Rc<RefCell<Option<String>>>,
+    ) {
+        while let Some(child) = list_box.first_child() {
+            list_box.remove(&child);
         }
 
         let mut first_radio: Option<CheckButton> = None;
@@ -233,8 +241,7 @@ impl ServersView {
             row.add_suffix(&ping_btn);
 
             // Radio button for selection
-            let is_selected = self
-                .selected_node_id
+            let is_selected = selected_id_cell
                 .borrow()
                 .as_ref()
                 .map(|id| id == &node.id)
@@ -257,7 +264,7 @@ impl ServersView {
             };
 
             let node_id = node.id.clone();
-            let selected_ref = self.selected_node_id.clone();
+            let selected_ref = selected_id_cell.clone();
             radio.connect_toggled(move |btn| {
                 if btn.is_active() {
                     *selected_ref.borrow_mut() = Some(node_id.clone());
@@ -265,7 +272,8 @@ impl ServersView {
             });
 
             row.add_suffix(&radio);
-            self.list_box.append(&row);
+            row.set_activatable_widget(Some(&radio));
+            list_box.append(&row);
         }
     }
 
@@ -297,6 +305,8 @@ impl ServersView {
         let ping_btn = self.ping_all_button.clone();
         let nodes_ref = self.nodes.clone();
         let list_box = self.list_box.clone();
+        let selected_id = self.selected_node_id.clone();
+        let nodes_changed = self.nodes_changed.clone();
 
         ping_btn.connect_clicked(move |btn| {
             btn.set_sensitive(false);
@@ -306,28 +316,24 @@ impl ServersView {
             let btn_clone = btn.clone();
             let nodes_ref_clone = nodes_ref.clone();
             let list_box_clone = list_box.clone();
+            let selected_clone = selected_id.clone();
+            let changed_clone = nodes_changed.clone();
 
             glib::MainContext::default().spawn_local(async move {
-                let updated = crate::net::batch_ping_nodes(nodes, 10, Duration::from_secs(3)).await;
+                let mut updated =
+                    crate::net::batch_ping_nodes(nodes, 10, Duration::from_secs(3)).await;
+                // Sort fastest first
+                updated.sort_by_key(|n| n.sort_latency());
+
                 *nodes_ref_clone.borrow_mut() = updated.clone();
+                Self::render_nodes_into(&list_box_clone, &updated, &selected_clone);
+
+                for listener in changed_clone.borrow().iter() {
+                    listener(&updated);
+                }
 
                 btn_clone.set_sensitive(true);
                 btn_clone.set_label("Test All");
-
-                // Update latency badges on existing rows
-                let mut child = list_box_clone.first_child();
-                let mut idx = 0;
-                while let Some(widget) = child {
-                    if idx < updated.len() {
-                        if let Some(row) = widget.downcast_ref::<ActionRow>() {
-                            if let Some(ms) = updated[idx].latency_ms {
-                                row.set_subtitle(&format!("{} ms latency", ms));
-                            }
-                        }
-                    }
-                    child = widget.next_sibling();
-                    idx += 1;
-                }
             });
         });
     }

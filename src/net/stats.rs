@@ -98,7 +98,10 @@ pub fn parse_single_stat_json(json: &str) -> Result<u64, String> {
 
 /// Queries the core for current traffic counters.
 pub fn query_counters(api_port: u16) -> Result<TrafficCounters, String> {
-    let output = Command::new("xray")
+    let binary = crate::core::process::CoreProcessManager::find_xray_binary()
+        .unwrap_or_else(|_| std::path::PathBuf::from("xray"));
+
+    let output = Command::new(binary)
         .args([
             "api",
             "statsquery",

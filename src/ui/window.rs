@@ -31,6 +31,7 @@ pub struct MainWindow {
     pub page_title_label: Label,
     pub split_view: OverlaySplitView,
     pub update_banner: Banner,
+    pub error_banner: Banner,
     /// Background image layer, behind the whole interface.
     pub wallpaper_picture: Picture,
     /// Scrim drawn between the wallpaper and the interface for readability.
@@ -187,10 +188,22 @@ impl MainWindow {
             );
         });
 
+        // In-app Alert / Error Banner
+        let error_banner = Banner::builder()
+            .button_label("View Logs")
+            .use_markup(true)
+            .build();
+        error_banner.set_revealed(false);
+
         // Libadwaita ViewStack
         let view_stack = ViewStack::new();
         view_stack.set_vexpand(true);
         view_stack.set_hexpand(true);
+
+        let stack_for_error = view_stack.clone();
+        error_banner.connect_button_clicked(move |_| {
+            stack_for_error.set_visible_child_name("logs");
+        });
 
         let dashboard_view = Rc::new(DashboardView::new());
         let servers_view = Rc::new(ServersView::new());
@@ -230,6 +243,7 @@ impl MainWindow {
             .build();
 
         right_container.append(&header_bar);
+        right_container.append(&error_banner);
         right_container.append(&update_banner);
         right_container.append(&view_stack);
         right_container.append(&view_switcher_bar);
@@ -339,9 +353,21 @@ impl MainWindow {
             page_title_label,
             split_view,
             update_banner,
+            error_banner,
             wallpaper_picture,
             wallpaper_scrim,
         }
+    }
+
+    /// Shows an actionable error banner at the top of the interface.
+    pub fn show_error(&self, message: &str) {
+        self.error_banner.set_title(&format!("⚠️ {message}"));
+        self.error_banner.set_revealed(true);
+    }
+
+    /// Hides the error banner.
+    pub fn hide_error(&self) {
+        self.error_banner.set_revealed(false);
     }
 
     /// Applies a wallpaper selection to the running window.

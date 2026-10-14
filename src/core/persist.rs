@@ -105,6 +105,13 @@ pub struct ConnectionSettings {
     pub direct_domains: Vec<String>,
     /// Whether the desktop proxy is configured automatically on connect.
     pub auto_system_proxy: bool,
+    /// Whether closing the main window minimizes to the system tray.
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ConnectionSettings {
@@ -125,6 +132,7 @@ impl Default for ConnectionSettings {
             block_ads: true,
             direct_domains: Vec::new(),
             auto_system_proxy: true,
+            minimize_to_tray: true,
         }
     }
 }
@@ -246,6 +254,11 @@ pub fn settings_path() -> Option<PathBuf> {
 /// Reads the stored appearance settings, falling back to defaults.
 pub fn load_appearance() -> AppearanceSettings {
     ConnectionSettings::load().0
+}
+
+/// Reads the stored connection settings, falling back to defaults.
+pub fn load_connection() -> ConnectionSettings {
+    ConnectionSettings::load().1
 }
 
 /// Persists the appearance settings. Failures are logged, never propagated.

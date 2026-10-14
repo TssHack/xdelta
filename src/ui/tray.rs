@@ -70,6 +70,56 @@ impl XdeltaTray {
     }
 }
 
+const PNG_CONNECTED: &[u8] =
+    include_bytes!("../../assets/icons/png/symbolic/xdelta-connected-32x32.png");
+const PNG_DISCONNECTED: &[u8] =
+    include_bytes!("../../assets/icons/png/symbolic/xdelta-disconnected-32x32.png");
+const PNG_DEFAULT: &[u8] = include_bytes!("../../assets/icons/png/app/xdelta-app-32x32.png");
+
+fn decode_png_to_sni_icon(png_bytes: &[u8]) -> Option<ksni::Icon> {
+    use gtk4::gdk_pixbuf::Pixbuf;
+    use gtk4::gio::MemoryInputStream;
+    use gtk4::glib::Bytes;
+
+    let bytes = Bytes::from(png_bytes);
+    let stream = MemoryInputStream::from_bytes(&bytes);
+    let pixbuf = Pixbuf::from_stream(&stream, None::<&gtk4::gio::Cancellable>).ok()?;
+    let width = pixbuf.width();
+    let height = pixbuf.height();
+    let n_channels = pixbuf.n_channels();
+    let rowstride = pixbuf.rowstride() as usize;
+    let pixels = unsafe { pixbuf.pixels() };
+
+    let mut argb_data = Vec::with_capacity((width * height * 4) as usize);
+
+    for y in 0..height as usize {
+        let row_start = y * rowstride;
+        for x in 0..width as usize {
+            let offset = row_start + x * (n_channels as usize);
+            let r = pixels[offset];
+            let g = pixels[offset + 1];
+            let b = pixels[offset + 2];
+            let a = if n_channels == 4 {
+                pixels[offset + 3]
+            } else {
+                255
+            };
+
+            // StatusNotifierItem expects ARGB32 (Big Endian: A, R, G, B)
+            argb_data.push(a);
+            argb_data.push(r);
+            argb_data.push(g);
+            argb_data.push(b);
+        }
+    }
+
+    Some(ksni::Icon {
+        width,
+        height,
+        data: argb_data,
+    })
+}
+
 impl Tray for XdeltaTray {
     fn id(&self) -> String {
         "xdelta".into()
@@ -87,15 +137,44 @@ impl Tray for XdeltaTray {
         Status::Active
     }
 
+    fn icon_theme_path(&self) -> String {
+        for candidate in [
+            "/usr/share/icons/hicolor",
+            "/usr/local/share/icons/hicolor",
+            "assets/icons/hicolor",
+        ] {
+            if std::path::Path::new(candidate).exists() {
+                return candidate.to_string();
+            }
+        }
+        if let Some(data_dir) = crate::core::persist::data_dir() {
+            let p = data_dir.join("icons/hicolor");
+            if p.exists() {
+                return p.to_string_lossy().to_string();
+            }
+        }
+        String::new()
+    }
+
     fn icon_name(&self) -> String {
         match self.state {
-            ConnectionState::Connected => "xdelta-connected-symbolic".into(),
+            ConnectionState::Connected => "network-vpn-symbolic".into(),
             ConnectionState::Connecting | ConnectionState::Disconnecting => {
-                "xdelta-symbolic".into()
+                "network-wireless-acquiring-symbolic".into()
             }
-            ConnectionState::Failed(_) => "xdelta-disconnected-symbolic".into(),
-            ConnectionState::Disconnected => "xdelta-app".into(),
+            ConnectionState::Failed(_) => "network-error-symbolic".into(),
+            ConnectionState::Disconnected => "network-offline-symbolic".into(),
         }
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        let bytes = match self.state {
+            ConnectionState::Connected => PNG_CONNECTED,
+            ConnectionState::Connecting | ConnectionState::Disconnecting => PNG_CONNECTED,
+            ConnectionState::Failed(_) => PNG_DISCONNECTED,
+            ConnectionState::Disconnected => PNG_DEFAULT,
+        };
+        decode_png_to_sni_icon(bytes).into_iter().collect()
     }
 
     fn tool_tip(&self) -> ToolTip {
@@ -125,11 +204,20 @@ impl Tray for XdeltaTray {
             }
         };
 
+        let tip_icon_name = match self.state {
+            ConnectionState::Connected => "network-vpn-symbolic".to_string(),
+            ConnectionState::Connecting | ConnectionState::Disconnecting => {
+                "network-wireless-acquiring-symbolic".to_string()
+            }
+            ConnectionState::Failed(_) => "network-error-symbolic".to_string(),
+            ConnectionState::Disconnected => "network-offline-symbolic".to_string(),
+        };
+
         ToolTip {
             title,
             description,
-            icon_name: self.icon_name(),
-            icon_pixmap: Vec::new(),
+            icon_name: tip_icon_name,
+            icon_pixmap: self.icon_pixmap(),
         }
     }
 

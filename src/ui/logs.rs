@@ -111,10 +111,24 @@ impl LogsView {
             .build();
         copy_btn.add_css_class("flat");
 
+        // Open in Editor button
+        let open_btn = Button::builder()
+            .icon_name("document-open-symbolic")
+            .tooltip_text("Open log file in system editor")
+            .build();
+        open_btn.add_css_class("flat");
+
+        // Export logs button
+        let export_btn = Button::builder()
+            .icon_name("document-save-symbolic")
+            .tooltip_text("Export logs to ~/xdelta_log_export.txt")
+            .build();
+        export_btn.add_css_class("flat");
+
         // Clear display button
         let clear_btn = Button::builder()
             .icon_name("edit-clear-symbolic")
-            .tooltip_text("Clear current log buffer")
+            .tooltip_text("Clear log buffer and file")
             .build();
         clear_btn.add_css_class("flat");
 
@@ -122,6 +136,8 @@ impl LogsView {
         toolbar.append(&level_dropdown);
         toolbar.append(&auto_scroll_toggle);
         toolbar.append(&copy_btn);
+        toolbar.append(&open_btn);
+        toolbar.append(&export_btn);
         toolbar.append(&clear_btn);
 
         // TextBuffer and TextView
@@ -234,11 +250,40 @@ impl LogsView {
             }
         });
 
+        // Open button wire
+        open_btn.connect_clicked(|_| {
+            if let Some(path) = crate::core::persist::log_path() {
+                if let Ok(uri) = gtk4::glib::filename_to_uri(&path, None) {
+                    let _ = gtk4::gio::AppInfo::launch_default_for_uri(
+                        &uri,
+                        None::<&gtk4::gio::AppLaunchContext>,
+                    );
+                }
+            }
+        });
+
+        // Export button wire
+        let buf_export = buffer.clone();
+        export_btn.connect_clicked(move |_| {
+            let (start, end) = buf_export.bounds();
+            let text = buf_export.text(&start, &end, false);
+            if let Some(home) = std::env::var_os("HOME") {
+                let dest = std::path::PathBuf::from(home).join("xdelta_log_export.txt");
+                let _ = std::fs::write(&dest, text.as_str());
+                log::info!("Logs exported to {}", dest.display());
+            }
+        });
+
         // Clear button wire
         let buf_clear = buffer.clone();
         let lines_clear = all_lines.clone();
         let counter_clear = line_count_label.clone();
+        let offset_clear = file_offset.clone();
         clear_btn.connect_clicked(move |_| {
+            if let Some(path) = crate::core::persist::log_path() {
+                let _ = std::fs::write(&path, "");
+            }
+            *offset_clear.borrow_mut() = 0;
             buf_clear.set_text("");
             lines_clear.borrow_mut().clear();
             counter_clear.set_label("0 lines");

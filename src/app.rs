@@ -449,8 +449,7 @@ impl App {
                         &format!("{} • {}", best.protocol.as_str(), describe_latency(&best)),
                     );
 
-                    // Connect through the same code path the power button uses,
-                    // so settings, routing and TUN options all apply.
+                    // Connect asynchronously without blocking the UI thread
                     let profile = {
                         let settings = main_window.settings_view.clone();
                         let routing = main_window.routing_view.clone();
@@ -462,23 +461,61 @@ impl App {
                         profile
                     };
 
+                    let win_c = main_window.clone();
+                    let ctl_c = controller.clone();
+                    let view_c = dashboard.clone();
+                    let tray_c = tray_handle.clone();
+                    let app_c = app.clone();
+                    let last_c = last_notified_state.clone();
                     let auto_proxy = main_window.dashboard_view.proxy_switch.is_active();
-                    let outcome = controller.borrow_mut().connect(&profile, auto_proxy);
 
-                    dashboard.render_outcome(&outcome);
-                    dashboard.set_active_mode(controller.borrow().active_mode());
-                    dashboard.set_subscription_status(&format!(
-                        "Connected to {} ({})",
-                        best.name,
-                        describe_latency(&best)
-                    ));
+                    win_c.hide_error();
+                    {
+                        let mut ctl = ctl_c.borrow_mut();
+                        let _ = ctl.start_connecting();
+                        view_c.render_outcome(&crate::core::TransitionOutcome::ok(
+                            crate::core::ConnectionState::Connecting,
+                        ));
+                        Self::sync_tray_and_notify(&ctl, &tray_c.borrow(), &app_c, &last_c);
+                    }
 
-                    Self::sync_tray_and_notify(
-                        &controller.borrow(),
-                        &tray_handle.borrow(),
-                        &app,
-                        &last_notified_state,
-                    );
+                    let prof_clone = profile.clone();
+                    glib::MainContext::default().spawn_local(async move {
+                        let res = tokio::task::spawn_blocking(move || {
+                            crate::core::ConnectionController::start_and_verify(&prof_clone)
+                        })
+                        .await;
+
+                        let mut ctl = ctl_c.borrow_mut();
+                        if !matches!(ctl.state(), crate::core::ConnectionState::Connecting) {
+                            return;
+                        }
+
+                        let outcome = match res {
+                            Ok(Ok((process, path, latency))) => {
+                                let outcome = ctl
+                                    .finish_connect(&profile, process, path, latency, auto_proxy);
+                                win_c.hide_error();
+                                outcome
+                            }
+                            Ok(Err(e)) => {
+                                win_c.show_error(&format!("Connection failed: {e}"));
+                                ctl.fail_connect(e)
+                            }
+                            Err(e) => {
+                                let msg = format!("Task failure: {e}");
+                                win_c.show_error(&msg);
+                                ctl.fail_connect(msg)
+                            }
+                        };
+
+                        view_c.render_outcome(&outcome);
+                        view_c.set_active_mode(ctl.active_mode());
+                        if !outcome.state.is_active() {
+                            view_c.clear_traffic();
+                        }
+                        Self::sync_tray_and_notify(&ctl, &tray_c.borrow(), &app_c, &last_c);
+                    });
                 });
             });
         }
@@ -499,10 +536,12 @@ impl App {
         let settings_view = main_window.settings_view.clone();
         let routing_view = main_window.routing_view.clone();
 
-        // The power button, icon and labels are all updated through the view's
-        // own render methods, so the closure only needs the view handle.
+        // The power button triggers a completely non-blocking connection
+        // cycle: the UI transitions to Connecting immediately, and the core
+        // start + network verification run on a background worker thread.
         {
             let view = main_window.dashboard_view.clone();
+            let win = main_window.clone();
             let controller = controller.clone();
             let servers_view = servers_view.clone();
             let settings_view = settings_view.clone();
@@ -517,67 +556,131 @@ impl App {
                 let was_active = ctl.state().is_active()
                     || matches!(ctl.state(), crate::core::ConnectionState::Connecting);
 
-                let outcome = if was_active {
-                    ctl.disconnect()
-                } else {
-                    // Build the profile from what the user actually configured.
-                    let node = {
-                        let nodes = servers_view.nodes.borrow();
-                        let selected_id = servers_view.selected_node_id.borrow();
-                        nodes
-                            .iter()
-                            .find(|n| selected_id.as_ref().map(|id| id == &n.id).unwrap_or(false))
-                            .or_else(|| nodes.first())
-                            .cloned()
-                    };
-
-                    let Some(node) = node else {
-                        // Distinguish the two very different causes: an empty
-                        // list (the server test found nothing, or it has not run
-                        // yet) versus no selection in a non-empty list. Telling
-                        // a user who has a subscription to "add a subscription"
-                        // is actively misleading.
-                        let has_nodes = !servers_view.nodes.borrow().is_empty();
-                        view.render_error(if has_nodes {
-                            "Select a server in the list first."
-                        } else {
-                            "No servers available yet. The list is still loading, \
-                             or the server test found none that work — use \
-                             \"Connect to Fastest\" to test again."
-                        });
-                        return;
-                    };
-
-                    let mut profile = ConnectionProfile::new(node, settings_view.connection_mode());
-                    settings_view.apply_ports_to(&mut profile);
-                    routing_view.apply_to(&mut profile);
-                    settings_view.apply_tun_to(&mut profile);
-
-                    ctl.connect(&profile, auto_proxy.is_active())
-                };
-
-                view.render_outcome(&outcome);
-                view.set_active_mode(ctl.active_mode());
-
-                if !outcome.state.is_active() {
+                if was_active {
+                    let outcome = ctl.disconnect();
+                    view.render_outcome(&outcome);
+                    view.set_active_mode(None);
                     view.clear_traffic();
+                    win.hide_error();
+                    Self::sync_tray_and_notify(
+                        &ctl,
+                        &tray_handle.borrow(),
+                        &app,
+                        &last_notified_state,
+                    );
+                    return;
                 }
 
+                // Build the profile from what the user actually configured.
+                let node = {
+                    let nodes = servers_view.nodes.borrow();
+                    let selected_id = servers_view.selected_node_id.borrow();
+                    nodes
+                        .iter()
+                        .find(|n| selected_id.as_ref().map(|id| id == &n.id).unwrap_or(false))
+                        .or_else(|| nodes.first())
+                        .cloned()
+                };
+
+                let Some(node) = node else {
+                    let has_nodes = !servers_view.nodes.borrow().is_empty();
+                    let msg = if has_nodes {
+                        "Select a server in the list first."
+                    } else {
+                        "No servers available yet. The list is still loading, \
+                         or the server test found none that work — use \
+                         \"Connect to Fastest\" to test again."
+                    };
+                    view.render_error(msg);
+                    win.show_error(msg);
+                    return;
+                };
+
+                let mut profile = ConnectionProfile::new(node, settings_view.connection_mode());
+                settings_view.apply_ports_to(&mut profile);
+                routing_view.apply_to(&mut profile);
+                settings_view.apply_tun_to(&mut profile);
+
+                if let Err(e) = ctl.start_connecting() {
+                    view.render_error(&e);
+                    win.show_error(&e);
+                    return;
+                }
+
+                win.hide_error();
+                let connecting_outcome =
+                    crate::core::TransitionOutcome::ok(crate::core::ConnectionState::Connecting);
+                view.render_outcome(&connecting_outcome);
                 Self::sync_tray_and_notify(&ctl, &tray_handle.borrow(), &app, &last_notified_state);
+                drop(ctl);
+
+                // Run the background connection establishment and verification off the GTK thread
+                let controller_c = controller.clone();
+                let view_c = view.clone();
+                let win_c = win.clone();
+                let tray_c = tray_handle.clone();
+                let app_c = app.clone();
+                let last_c = last_notified_state.clone();
+                let auto_proxy_active = auto_proxy.is_active();
+                let prof = profile.clone();
+
+                glib::MainContext::default().spawn_local(async move {
+                    let connect_res = tokio::task::spawn_blocking(move || {
+                        crate::core::ConnectionController::start_and_verify(&prof)
+                    })
+                    .await;
+
+                    let mut ctl = controller_c.borrow_mut();
+                    if !matches!(ctl.state(), crate::core::ConnectionState::Connecting) {
+                        return; // user cancelled while connecting
+                    }
+
+                    let outcome = match connect_res {
+                        Ok(Ok((process, path, latency))) => {
+                            let outcome = ctl.finish_connect(
+                                &profile,
+                                process,
+                                path,
+                                latency,
+                                auto_proxy_active,
+                            );
+                            win_c.hide_error();
+                            outcome
+                        }
+                        Ok(Err(e)) => {
+                            win_c.show_error(&format!("Connection failed: {e}"));
+                            ctl.fail_connect(e)
+                        }
+                        Err(e) => {
+                            let msg = format!("Background task error: {e}");
+                            win_c.show_error(&msg);
+                            ctl.fail_connect(msg)
+                        }
+                    };
+
+                    view_c.render_outcome(&outcome);
+                    view_c.set_active_mode(ctl.active_mode());
+                    if !outcome.state.is_active() {
+                        view_c.clear_traffic();
+                    }
+                    Self::sync_tray_and_notify(&ctl, &tray_c.borrow(), &app_c, &last_c);
+                });
             });
         }
 
         let _ = (&status_badge, &server_name_lbl, &server_sub_label);
 
-        // Periodic tick: refresh live traffic and notice a core that died.
+        // Periodic tick: non-blocking background traffic polling and health checks.
         let controller = controller.clone();
         let view = main_window.dashboard_view.clone();
+        let win = main_window.clone();
         let tray_handle_for_tick = tray_handle.clone();
         let app_for_tick = app.clone();
         let last_notified_for_tick = last_notified_state.clone();
-        // Tracked so a connection drop is reported once, not on every tick.
         let was_connected = Rc::new(std::cell::Cell::new(false));
         let last_stats_ok = Rc::new(std::cell::Cell::new(true));
+
+        static STATS_POLL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
         glib::timeout_add_local(TRAFFIC_POLL_INTERVAL, move || {
             let mut ctl = controller.borrow_mut();
@@ -590,15 +693,11 @@ impl App {
                 &last_notified_for_tick,
             );
 
-            // Live traffic is polled only while a connection is up; the core is
-            // not running otherwise, so there is nothing to sample.
+            // Live traffic is polled only while a connection is up
             if matches!(ctl.state(), crate::core::ConnectionState::Connected) {
                 was_connected.set(true);
 
                 if !ctl.is_core_alive() {
-                    // The core died while we believed it was connected. Its last
-                    // output lines explain why, and they are logged here because
-                    // this is the only place that observes the transition.
                     let tail = ctl.core_output_tail();
                     log::error!(
                         "core died while connected; last output:\n  {}",
@@ -613,48 +712,70 @@ impl App {
                     view.render_outcome(&outcome);
                     view.set_active_mode(None);
                     view.clear_traffic();
+                    win.show_error(
+                        "Proxy core exited unexpectedly. Check Diagnostics & Logs for details.",
+                    );
                     return glib::ControlFlow::Continue;
                 }
 
-                match ctl.poll_traffic() {
-                    Some((rates, totals)) => {
-                        if !last_stats_ok.get() {
-                            log::info!("traffic statistics are available again");
-                            last_stats_ok.set(true);
-                        }
-                        view.render_traffic(rates, totals);
-                    }
-                    None => {
-                        // Statistics failing while the process is alive usually
-                        // means the API listener stopped answering, which is worth
-                        // one warning rather than silence.
-                        if last_stats_ok.get() {
-                            log::warn!(
-                                "traffic statistics unavailable; the core is alive but the API port is not answering"
-                            );
-                            last_stats_ok.set(false);
-                        }
-                    }
-                }
+                // Offload querying stats & health check to a background worker
+                // so the GTK main loop NEVER blocks on subprocesses or network timeouts.
+                if STATS_POLL_IN_FLIGHT
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    let (api_port, socks_port, _) = ctl.live_ports();
+                    let should_health = ctl.should_recheck_health();
+                    let ctl_c = controller.clone();
+                    let view_c = view.clone();
+                    let win_c = win.clone();
+                    let last_ok_c = last_stats_ok.clone();
 
-                // While connected, confirm the tunnel still carries traffic.
-                // This is what turns a silent drop into a visible error: without
-                // it, a server that stops forwarding leaves the UI claiming a
-                // healthy connection indefinitely.
-                if ctl.should_recheck_health() {
-                    match ctl.recheck_health() {
-                        Ok(Some(latency)) => {
-                            log::debug!("health check passed ({latency} ms)");
+                    glib::MainContext::default().spawn_local(async move {
+                        let (stats_res, health_res) = tokio::task::spawn_blocking(move || {
+                            let stats = crate::net::stats::query_counters(api_port);
+                            let health = if should_health {
+                                Some(crate::net::probe::verify_connection(
+                                    socks_port,
+                                    std::time::Duration::from_secs(3),
+                                ))
+                            } else {
+                                None
+                            };
+                            (stats, health)
+                        })
+                        .await
+                        .unwrap_or((Err("join error".into()), None));
+
+                        STATS_POLL_IN_FLIGHT.store(false, Ordering::Relaxed);
+
+                        let mut ctl = ctl_c.borrow_mut();
+                        if matches!(ctl.state(), crate::core::ConnectionState::Connected) {
+                            match stats_res {
+                                Ok(counters) => {
+                                    if !last_ok_c.get() {
+                                        last_ok_c.set(true);
+                                    }
+                                    let (rates, totals) = ctl.apply_counters(counters);
+                                    view_c.render_traffic(rates, totals);
+                                }
+                                Err(e) => {
+                                    if last_ok_c.get() {
+                                        log::warn!("traffic statistics unavailable: {e}");
+                                        last_ok_c.set(false);
+                                    }
+                                }
+                            }
+
+                            if let Some(Err(reason)) = health_res {
+                                log::warn!("connection health check failed: {reason}");
+                                win_c.show_error(&format!("Tunnel degraded: {reason}"));
+                                let outcome = ctl.note_connection_degraded(&reason);
+                                view_c.render_outcome(&outcome);
+                                view_c.clear_traffic();
+                            }
                         }
-                        Ok(None) => {}
-                        Err(reason) => {
-                            log::warn!("connection health check failed: {reason}");
-                            let outcome = ctl.note_connection_degraded(&reason);
-                            view.render_outcome(&outcome);
-                            view.set_active_mode(None);
-                            view.clear_traffic();
-                        }
-                    }
+                    });
                 }
             } else if was_connected.replace(false) {
                 log::info!("connection is no longer active; polling stopped");

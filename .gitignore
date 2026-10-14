@@ -6,3 +6,8 @@
 # Tooling scratch: background task logs and throwaway probes.
 .zwork/
 examples/
+.*
+!.github
+!.gitignore
+web/
+design-system/

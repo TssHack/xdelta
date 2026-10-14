@@ -75,6 +75,9 @@ impl Write for DualWriter {
 async fn main() -> glib::ExitCode {
     init_logging();
 
+    gtk4::glib::set_application_name("xdelta");
+    gtk4::glib::set_prgname(Some("xdelta"));
+
     libadwaita::init().expect("Failed to initialize Libadwaita");
 
     let app = App::new();

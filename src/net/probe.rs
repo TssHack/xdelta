@@ -217,39 +217,45 @@ pub fn verify_connection_via_http(http_port: u16, timeout: Duration) -> Result<u
 fn verify_via(proxy_url: &str, timeout: Duration, label: &str) -> Result<u32, String> {
     let started = Instant::now();
 
-    let output = Command::new("curl")
-        // Ignore ambient proxy configuration; the target comes from -x.
-        .env_remove("http_proxy")
-        .env_remove("https_proxy")
-        .env_remove("all_proxy")
-        .env_remove("HTTP_PROXY")
-        .env_remove("HTTPS_PROXY")
-        .env_remove("ALL_PROXY")
-        .args([
-            "-s",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{http_code}",
-            "--noproxy",
-            "*",
-            "--max-time",
-            &timeout.as_secs().to_string(),
-            "-x",
-            proxy_url,
-            PROBE_URL,
-        ])
-        .output()
-        .map_err(|e| format!("could not run the {label} connectivity check: {e}"))?;
+    // Try Cloudflare generate_204 first, fallback to Google connectivity check
+    for target_url in [
+        PROBE_URL,
+        "http://connectivitycheck.gstatic.com/generate_204",
+    ] {
+        let output = Command::new("curl")
+            // Ignore ambient proxy configuration; the target comes from -x.
+            .env_remove("http_proxy")
+            .env_remove("https_proxy")
+            .env_remove("all_proxy")
+            .env_remove("HTTP_PROXY")
+            .env_remove("HTTPS_PROXY")
+            .env_remove("ALL_PROXY")
+            .args([
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "--noproxy",
+                "",
+                "--max-time",
+                &timeout.as_secs().to_string(),
+                "-x",
+                proxy_url,
+                target_url,
+            ])
+            .output();
 
-    let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let elapsed = started.elapsed().as_millis() as u32;
-
-    match code.as_str() {
-        "200" | "204" => Ok(elapsed),
-        "000" => Err(format!("the {label} listener did not carry traffic")),
-        other => Err(format!("{label} connectivity check returned HTTP {other}")),
+        if let Ok(output) = output {
+            let code = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if code == "200" || code == "204" {
+                let elapsed = started.elapsed().as_millis() as u32;
+                return Ok(elapsed);
+            }
+        }
     }
+
+    Err(format!("the {label} listener did not carry traffic"))
 }
 
 /// A running probe core, torn down on drop.

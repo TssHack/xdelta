@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=xdelta
+GenericName=Proxy Client
+GenericName[fa]=کلاینت پروکسی
+Comment=Native, high-performance Linux proxy client for Xray and Sing-box
+Comment[fa]=کلاینت بومی و پرسرعت لینوکس برای Xray و Sing-box
+Exec=xdelta
+Icon=xdelta-app
+Terminal=false
+Type=Application
+Categories=Network;Security;GTK;
+StartupNotify=true
+Keywords=VPN;Proxy;Xray;Sing-box;V2Ray;Vless;Shadowsocks;
+X-Purism-FormFactor=Workstation;Mobile;

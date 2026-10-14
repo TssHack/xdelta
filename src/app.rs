@@ -35,32 +35,6 @@ fn describe_latency(node: &Node) -> String {
 /// probe path twice (once for the cache, once after the network refresh).
 static PROBE_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Result of the background probe started by the fastest-server button.
-enum FastestOutcome {
-    Ready(Vec<Node>),
-    Failed(String),
-}
-
-/// Messages sent from the probing worker thread back to the main loop.
-///
-/// The probe takes tens of seconds and must not run on the UI thread, so its
-/// progress and final result travel through this channel.
-enum ProbeMessage {
-    Started {
-        total: usize,
-    },
-    Progress {
-        completed: usize,
-        total: usize,
-        working: usize,
-    },
-    Finished {
-        candidates: Vec<Node>,
-        results: Vec<crate::net::ProbeResult>,
-    },
-    Failed(String),
-}
-
 pub struct App {
     app: Application,
     _hold_guard: Rc<RefCell<Option<gtk4::gio::ApplicationHoldGuard>>>,
@@ -103,14 +77,22 @@ impl App {
             {
                 let tray_handle_for_init = tray_handle.clone();
                 let is_window_visible_for_tray = is_window_visible.clone();
+                let (h_tx, h_rx) = async_channel::bounded(1);
+                tokio::spawn(async move {
+                    let res =
+                        XdeltaTray::spawn_service(tray_sender, is_window_visible_for_tray).await;
+                    let _ = h_tx.send(res).await;
+                });
+
                 glib::MainContext::default().spawn_local(async move {
-                    match XdeltaTray::spawn_service(tray_sender, is_window_visible_for_tray).await {
-                        Ok(handle) => {
+                    match h_rx.recv().await {
+                        Ok(Ok(handle)) => {
                             *tray_handle_for_init.borrow_mut() = Some(handle);
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             log::warn!("StatusNotifierItem (tray) unavailable on D-Bus: {e}");
                         }
+                        Err(_) => {}
                     }
                 });
             }
@@ -377,36 +359,13 @@ impl App {
                 let controller = controller_click.clone();
 
                 button.set_sensitive(false);
-                button.set_label("Testing servers...");
-                dashboard.set_subscription_status("Finding the fastest working server...");
+                button.set_label("Finding fastest server...");
+                dashboard.set_subscription_status("Testing servers for lowest latency...");
 
-                // Only plain data crosses the thread boundary: GTK widgets and
-                // Rc handles are not Send, so the probe cannot capture them.
                 let candidates = {
                     let nodes = servers_view.nodes.borrow();
                     crate::net::probe::deduplicate(&crate::net::probe::usable_nodes(&nodes))
                 };
-
-                let (tx, rx) = async_channel::bounded::<FastestOutcome>(1);
-
-                std::thread::spawn(move || {
-                    use crate::net::probe;
-
-                    let outcome = match probe::probe_nodes(&candidates, |_| {}) {
-                        Ok(results) => {
-                            let mut ranked = candidates.clone();
-                            probe::apply_results(&mut ranked, &results);
-                            probe::rank_nodes(&mut ranked);
-                            let list = probe::top_servers(&ranked, probe::TOP_SERVERS_SHOWN);
-                            FastestOutcome::Ready(list)
-                        }
-                        Err(e) => {
-                            log::warn!("fastest-server probe failed: {}", e);
-                            FastestOutcome::Failed(e)
-                        }
-                    };
-                    let _ = tx.send_blocking(outcome);
-                });
 
                 let dashboard = dashboard.clone();
                 let servers_view = servers_view.clone();
@@ -418,29 +377,37 @@ impl App {
                 let last_notified_state = last_notified_state.clone();
 
                 glib::MainContext::default().spawn_local(async move {
-                    let outcome = rx.recv().await;
+                    if candidates.is_empty() {
+                        button.set_sensitive(true);
+                        button.set_label("Connect to Fastest");
+                        dashboard.set_subscription_status("No servers available to test");
+                        return;
+                    }
+
+                    // Fast concurrent TCP ping across candidates (1-2s total)
+                    let mut updated = crate::net::batch_ping_nodes(
+                        candidates,
+                        30,
+                        std::time::Duration::from_secs(2),
+                    )
+                    .await;
+                    updated.sort_by_key(|n| n.sort_latency());
+
+                    let working_list: Vec<Node> = updated
+                        .into_iter()
+                        .filter(|n| n.latency_ms.is_some())
+                        .collect();
 
                     button.set_sensitive(true);
                     button.set_label("Connect to Fastest");
 
-                    let list = match outcome {
-                        Ok(FastestOutcome::Ready(list)) if !list.is_empty() => list,
-                        Ok(FastestOutcome::Ready(_)) => {
-                            dashboard
-                                .set_subscription_status("No working server was found in the list");
-                            return;
-                        }
-                        Ok(FastestOutcome::Failed(e)) => {
-                            dashboard.set_subscription_status(&format!("Server test failed: {e}"));
-                            return;
-                        }
-                        Err(_) => return,
-                    };
+                    if working_list.is_empty() {
+                        dashboard.set_subscription_status("No responsive server found");
+                        return;
+                    }
 
-                    // The ranked list is already fastest-first, so entry zero is
-                    // the lowest-latency server confirmed to carry traffic.
-                    let best = list[0].clone();
-                    servers_view.set_nodes(list);
+                    let best = working_list[0].clone();
+                    servers_view.set_nodes(working_list);
                     dashboard.set_server_choices(&servers_view.nodes.borrow(), Some(&best.id));
                     *servers_view.selected_node_id.borrow_mut() = Some(best.id.clone());
 
@@ -861,7 +828,11 @@ impl App {
         let mut shown_from_cache = false;
         if let Some(cached) = cache::load_cache(&url) {
             if cached.is_usable() {
-                servers_view.set_nodes(cached.nodes.clone());
+                let initial = crate::net::probe::top_servers(
+                    &cached.nodes,
+                    crate::net::probe::TOP_SERVERS_SHOWN,
+                );
+                servers_view.set_nodes(initial);
                 shown_from_cache = true;
                 if cached.is_stale(chrono::Utc::now()) {
                     log::info!("cached subscription is stale; refreshing in background");
@@ -898,7 +869,11 @@ impl App {
 
                     log::info!("default subscription parsed {} nodes", nodes.len());
                     cache::save_cache(&url, &nodes);
-                    view_for_fetch.set_nodes(nodes);
+                    let initial = crate::net::probe::top_servers(
+                        &nodes,
+                        crate::net::probe::TOP_SERVERS_SHOWN,
+                    );
+                    view_for_fetch.set_nodes(initial);
 
                     // Probing is the expensive step, so it runs after the list
                     // is already on screen.
@@ -915,21 +890,10 @@ impl App {
         });
     }
 
-    /// Runs the probe pass over the default subscription and keeps the fastest
-    /// servers.
-    ///
-    /// The probe is CPU- and network-heavy and blocking, so it runs on a worker
-    /// thread. Progress and the final list are pushed back to the main loop
-    /// through a channel, keeping the UI responsive while hundreds of candidates
-    /// are tested.
+    /// Runs the non-blocking latency pass over the servers and keeps the fastest.
     fn probe_and_rank(main_window: Rc<MainWindow>, _controller: Rc<RefCell<ConnectionController>>) {
-        use crate::net::probe;
         use std::sync::atomic::Ordering;
 
-        // Only one probe pass may run at a time. The subscription loader can
-        // legitimately reach this path twice (once for the cache, once after the
-        // network refresh), and two concurrent passes would contend for the same
-        // probe ports and overwrite each other's results.
         if PROBE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
             log::debug!("a probe pass is already running; skipping this request");
             return;
@@ -938,97 +902,43 @@ impl App {
         let servers_view = main_window.servers_view.clone();
         let dashboard = main_window.dashboard_view.clone();
 
-        // Only the nodes currently displayed are considered, and duplicates are
-        // dropped because the bundled list repeats many entries.
-        let candidates = probe::deduplicate(&probe::usable_nodes(&servers_view.nodes.borrow()));
+        let candidates = crate::net::probe::deduplicate(&crate::net::probe::usable_nodes(
+            &servers_view.nodes.borrow(),
+        ));
         if candidates.is_empty() {
             PROBE_IN_FLIGHT.store(false, Ordering::SeqCst);
             return;
         }
 
-        let (tx, rx) = async_channel::bounded::<ProbeMessage>(8);
-
-        std::thread::spawn(move || {
-            let total = candidates.len();
-            let _ = tx.send_blocking(ProbeMessage::Started { total });
-
-            let result = probe::probe_nodes(&candidates, |progress| {
-                // A full channel means the UI is behind; dropping an
-                // intermediate progress update is harmless, so this must never
-                // block the probe thread.
-                let _ = tx.try_send(ProbeMessage::Progress {
-                    completed: progress.completed,
-                    total: progress.total,
-                    working: progress.working,
-                });
-            });
-
-            match result {
-                Ok(results) => {
-                    let _ = tx.send_blocking(ProbeMessage::Finished {
-                        candidates,
-                        results,
-                    });
-                }
-                Err(e) => {
-                    let _ = tx.send_blocking(ProbeMessage::Failed(e));
-                }
-            }
-        });
-
         glib::MainContext::default().spawn_local(async move {
-            while let Ok(message) = rx.recv().await {
-                match message {
-                    ProbeMessage::Started { total } => {
-                        dashboard.set_subscription_status(&format!(
-                            "Testing {total} servers for real connectivity..."
-                        ));
-                    }
-                    ProbeMessage::Progress {
-                        completed,
-                        total,
-                        working,
-                    } => {
-                        dashboard.set_subscription_status(&format!(
-                            "Testing servers: {completed}/{total} ({working} working)"
-                        ));
-                    }
-                    ProbeMessage::Finished {
-                        candidates,
-                        results,
-                    } => {
-                        let mut nodes = candidates;
-                        probe::apply_results(&mut nodes, &results);
-                        probe::rank_nodes(&mut nodes);
+            dashboard.set_subscription_status(&format!(
+                "Testing latency for {} servers...",
+                candidates.len()
+            ));
 
-                        let working = nodes.iter().filter(|n| n.verified == Some(true)).count();
-                        let shown = probe::top_servers(&nodes, probe::TOP_SERVERS_SHOWN);
+            let mut updated =
+                crate::net::batch_ping_nodes(candidates, 30, std::time::Duration::from_secs(2))
+                    .await;
+            updated.sort_by_key(|n| n.sort_latency());
 
-                        servers_view.set_nodes(shown.clone());
+            let working_count = updated.iter().filter(|n| n.latency_ms.is_some()).count();
+            let shown =
+                crate::net::probe::top_servers(&updated, crate::net::probe::TOP_SERVERS_SHOWN);
 
-                        dashboard.set_subscription_status(&format!(
-                            "{working} of {} servers work; showing the fastest {}",
-                            nodes.len(),
-                            shown.len()
-                        ));
+            servers_view.set_nodes(shown.clone());
+            dashboard.set_subscription_status(&format!(
+                "{working_count} of {} servers responsive; showing the fastest {}",
+                updated.len(),
+                shown.len()
+            ));
 
-                        log::info!(
-                            "probe finished: {} working of {} tested, showing {}",
-                            working,
-                            nodes.len(),
-                            shown.len()
-                        );
-                    }
-                    ProbeMessage::Failed(e) => {
-                        log::warn!("probing failed: {}", e);
-                        dashboard.set_subscription_status(&format!("Server test failed: {e}"));
-                    }
-                }
-            }
+            log::info!(
+                "ping pass finished: {working_count} responsive of {} tested, showing {}",
+                updated.len(),
+                shown.len()
+            );
 
-            // The channel closes when the worker finishes, which is exactly the
-            // point at which another probe pass may start.
-            PROBE_IN_FLIGHT.store(false, std::sync::atomic::Ordering::SeqCst);
+            PROBE_IN_FLIGHT.store(false, Ordering::SeqCst);
         });
     }
 

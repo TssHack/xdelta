@@ -6,6 +6,7 @@ pub mod servers;
 pub mod settings;
 pub mod subscriptions;
 pub mod theme;
+pub mod tray;
 pub mod wallpaper;
 pub mod widget_audit;
 pub mod window;

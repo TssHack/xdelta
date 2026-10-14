@@ -1,7 +1,9 @@
+use crate::core::session::ConnectionState;
 use crate::core::{ConnectionController, ConnectionProfile};
 use crate::model::Node;
 use crate::net::tun::{self, TunReadiness};
 use crate::parser::fetch_and_parse_subscription;
+use crate::ui::tray::{TrayEvent, XdeltaTray};
 use crate::ui::MainWindow;
 use gtk4::gdk::Display;
 use gtk4::glib;
@@ -10,6 +12,8 @@ use gtk4::CssProvider;
 use libadwaita::Application;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// How often the dashboard refreshes live traffic numbers.
 const TRAFFIC_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
@@ -59,6 +63,7 @@ enum ProbeMessage {
 
 pub struct App {
     app: Application,
+    _hold_guard: Rc<RefCell<Option<gtk4::gio::ApplicationHoldGuard>>>,
 }
 
 impl App {
@@ -73,12 +78,109 @@ impl App {
             Self::apply_saved_appearance();
         });
 
-        app.connect_activate(|app| {
+        let hold_slot = Rc::new(RefCell::new(None));
+        let hold_slot_for_activate = hold_slot.clone();
+
+        app.connect_activate(move |app| {
+            // Keep application alive when window is minimized/hidden to system tray
+            if hold_slot_for_activate.borrow().is_none() {
+                *hold_slot_for_activate.borrow_mut() = Some(app.hold());
+            }
+
             let main_window = Rc::new(MainWindow::new(app));
 
             // Core Process State, created first because the subscription loader
             // and the power button both need it.
             let controller = Rc::new(RefCell::new(ConnectionController::new()));
+
+            // AppIndicator / System Tray service
+            let is_window_visible = Arc::new(AtomicBool::new(true));
+            let (tray_sender, tray_receiver) = async_channel::unbounded::<TrayEvent>();
+            let tray_handle: Rc<RefCell<Option<crate::ui::tray::TrayHandle>>> =
+                Rc::new(RefCell::new(None));
+            let last_notified_state = Rc::new(RefCell::new(None));
+
+            {
+                let tray_handle_for_init = tray_handle.clone();
+                let is_window_visible_for_tray = is_window_visible.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    match XdeltaTray::spawn_service(tray_sender, is_window_visible_for_tray).await {
+                        Ok(handle) => {
+                            *tray_handle_for_init.borrow_mut() = Some(handle);
+                        }
+                        Err(e) => {
+                            log::warn!("StatusNotifierItem (tray) unavailable on D-Bus: {e}");
+                        }
+                    }
+                });
+            }
+
+            // Minimize to system tray on window close if enabled
+            {
+                let is_window_visible_close = is_window_visible.clone();
+                let settings_for_close = main_window.settings_view.clone();
+                let controller_for_close = controller.clone();
+                let tray_handle_for_close = tray_handle.clone();
+                main_window.window.connect_close_request(move |win| {
+                    if settings_for_close.minimize_to_tray_switch.is_active() {
+                        log::info!("Window close requested; minimizing to system tray");
+                        is_window_visible_close.store(false, Ordering::Relaxed);
+                        win.set_visible(false);
+                        if let Some(h) = tray_handle_for_close.borrow().as_ref() {
+                            let h = h.clone();
+                            glib::MainContext::default().spawn_local(async move {
+                                let _ = h.update(|_| {}).await;
+                            });
+                        }
+                        glib::Propagation::Stop
+                    } else {
+                        log::info!("Window close requested; shutting down");
+                        let mut ctl = controller_for_close.borrow_mut();
+                        if ctl.state().is_active() {
+                            let _ = ctl.disconnect();
+                        }
+                        glib::Propagation::Proceed
+                    }
+                });
+            }
+
+            // Wire tray menu events (Show/Hide, Connect/Disconnect, Quit)
+            {
+                let win = main_window.window.clone();
+                let is_window_visible_events = is_window_visible.clone();
+                let power_btn = main_window.dashboard_view.power_button.clone();
+                let controller_for_quit = controller.clone();
+                let app_for_quit = app.clone();
+
+                glib::MainContext::default().spawn_local(async move {
+                    while let Ok(event) = tray_receiver.recv().await {
+                        match event {
+                            TrayEvent::ToggleWindow => {
+                                let is_vis = is_window_visible_events.load(Ordering::Relaxed);
+                                if is_vis && win.is_active() {
+                                    win.set_visible(false);
+                                    is_window_visible_events.store(false, Ordering::Relaxed);
+                                } else {
+                                    win.set_visible(true);
+                                    win.present();
+                                    is_window_visible_events.store(true, Ordering::Relaxed);
+                                }
+                            }
+                            TrayEvent::ToggleConnection => {
+                                power_btn.emit_clicked();
+                            }
+                            TrayEvent::Quit => {
+                                log::info!("Quit requested from system tray AppIndicator");
+                                let mut ctl = controller_for_quit.borrow_mut();
+                                if ctl.state().is_active() {
+                                    let _ = ctl.disconnect();
+                                }
+                                app_for_quit.quit();
+                            }
+                        }
+                    }
+                });
+            }
 
             // The bundled subscription is loaded instead of placeholder nodes.
             //
@@ -106,10 +208,22 @@ impl App {
             Self::wire_tun_permission(main_window.clone(), controller.clone());
 
             // Wire Connect Button
-            Self::wire_power_button(main_window.clone(), controller.clone());
+            Self::wire_power_button(
+                main_window.clone(),
+                controller.clone(),
+                tray_handle.clone(),
+                app.clone(),
+                last_notified_state.clone(),
+            );
 
             // Dashboard server picker and the one-click fastest-server action.
-            Self::wire_dashboard_server_controls(main_window.clone(), controller.clone());
+            Self::wire_dashboard_server_controls(
+                main_window.clone(),
+                controller.clone(),
+                tray_handle.clone(),
+                app.clone(),
+                last_notified_state.clone(),
+            );
 
             // Wire Subscription Fetch Button
             Self::wire_subscription_fetch(main_window.clone());
@@ -134,7 +248,65 @@ impl App {
             main_window.present();
         });
 
-        Self { app }
+        Self {
+            app,
+            _hold_guard: hold_slot,
+        }
+    }
+
+    fn sync_tray_and_notify(
+        controller: &ConnectionController,
+        tray_handle: &Option<crate::ui::tray::TrayHandle>,
+        app: &Application,
+        last_notified: &RefCell<Option<ConnectionState>>,
+    ) {
+        let current_state = controller.state().clone();
+        let (server_name, latency) = match &current_state {
+            ConnectionState::Connected => {
+                let node = controller.active_node();
+                (
+                    node.map(|n| n.name.clone()),
+                    node.and_then(|n| n.latency_ms),
+                )
+            }
+            _ => (None, None),
+        };
+
+        if let Some(handle) = tray_handle {
+            let handle = handle.clone();
+            let s_name = server_name.clone();
+            let st = current_state.clone();
+            glib::MainContext::default().spawn_local(async move {
+                let _ = handle
+                    .update(move |tray| {
+                        tray.update_connection(st, s_name, latency);
+                    })
+                    .await;
+            });
+        }
+
+        let mut last = last_notified.borrow_mut();
+        let prev_active = last.as_ref().map(|s| s.is_active()).unwrap_or(false);
+        let curr_active = current_state.is_active();
+
+        if last.as_ref() != Some(&current_state) {
+            *last = Some(current_state.clone());
+
+            if curr_active && !prev_active {
+                let notif = gtk4::gio::Notification::new("xdelta");
+                notif.set_title("xdelta: Connected");
+                let s_text = server_name.as_deref().unwrap_or("Proxy Server");
+                notif.set_body(Some(&format!("Secure tunnel established via {s_text}")));
+                notif.set_icon(&gtk4::gio::ThemedIcon::new("xdelta-connected-symbolic"));
+                app.send_notification(Some("xdelta-connection-state"), &notif);
+            } else if !curr_active && prev_active {
+                let notif = gtk4::gio::Notification::new("xdelta");
+                notif.set_title("xdelta: Disconnected");
+                notif.set_body(Some("Proxy connection has been stopped"));
+                notif.set_icon(&gtk4::gio::ThemedIcon::new("xdelta-disconnected-symbolic"));
+                app.send_notification(Some("xdelta-connection-state"), &notif);
+            }
+        }
     }
 
     /// Connects the dashboard's server picker and the "Connect to Fastest"
@@ -145,6 +317,9 @@ impl App {
     fn wire_dashboard_server_controls(
         main_window: Rc<MainWindow>,
         controller: Rc<RefCell<ConnectionController>>,
+        tray_handle: Rc<RefCell<Option<crate::ui::tray::TrayHandle>>>,
+        app: Application,
+        last_notified_state: Rc<RefCell<Option<ConnectionState>>>,
     ) {
         let dashboard = main_window.dashboard_view.clone();
         let servers_view = main_window.servers_view.clone();
@@ -238,6 +413,9 @@ impl App {
                 let main_window = main_window.clone();
                 let controller = controller.clone();
                 let button = button.clone();
+                let tray_handle = tray_handle.clone();
+                let app = app.clone();
+                let last_notified_state = last_notified_state.clone();
 
                 glib::MainContext::default().spawn_local(async move {
                     let outcome = rx.recv().await;
@@ -294,6 +472,13 @@ impl App {
                         best.name,
                         describe_latency(&best)
                     ));
+
+                    Self::sync_tray_and_notify(
+                        &controller.borrow(),
+                        &tray_handle.borrow(),
+                        &app,
+                        &last_notified_state,
+                    );
                 });
             });
         }
@@ -302,6 +487,9 @@ impl App {
     fn wire_power_button(
         main_window: Rc<MainWindow>,
         controller: Rc<RefCell<ConnectionController>>,
+        tray_handle: Rc<RefCell<Option<crate::ui::tray::TrayHandle>>>,
+        app: Application,
+        last_notified_state: Rc<RefCell<Option<ConnectionState>>>,
     ) {
         let status_badge = main_window.dashboard_view.status_badge.clone();
         let server_name_lbl = main_window.dashboard_view.server_name_label.clone();
@@ -320,6 +508,9 @@ impl App {
             let settings_view = settings_view.clone();
             let routing_view = routing_view.clone();
             let power_btn = main_window.dashboard_view.power_button.clone();
+            let tray_handle = tray_handle.clone();
+            let app = app.clone();
+            let last_notified_state = last_notified_state.clone();
 
             power_btn.connect_clicked(move |_| {
                 let mut ctl = controller.borrow_mut();
@@ -371,6 +562,8 @@ impl App {
                 if !outcome.state.is_active() {
                     view.clear_traffic();
                 }
+
+                Self::sync_tray_and_notify(&ctl, &tray_handle.borrow(), &app, &last_notified_state);
             });
         }
 
@@ -379,12 +572,23 @@ impl App {
         // Periodic tick: refresh live traffic and notice a core that died.
         let controller = controller.clone();
         let view = main_window.dashboard_view.clone();
+        let tray_handle_for_tick = tray_handle.clone();
+        let app_for_tick = app.clone();
+        let last_notified_for_tick = last_notified_state.clone();
         // Tracked so a connection drop is reported once, not on every tick.
         let was_connected = Rc::new(std::cell::Cell::new(false));
         let last_stats_ok = Rc::new(std::cell::Cell::new(true));
 
         glib::timeout_add_local(TRAFFIC_POLL_INTERVAL, move || {
             let mut ctl = controller.borrow_mut();
+
+            // Always sync tray state on tick
+            Self::sync_tray_and_notify(
+                &ctl,
+                &tray_handle_for_tick.borrow(),
+                &app_for_tick,
+                &last_notified_for_tick,
+            );
 
             // Live traffic is polled only while a connection is up; the core is
             // not running otherwise, so there is nothing to sample.

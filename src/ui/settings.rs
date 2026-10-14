@@ -18,6 +18,7 @@ pub struct SettingsView {
     pub http_port_entry: Entry,
     pub theme_row: ComboRow,
     pub auto_proxy_switch: Switch,
+    pub minimize_to_tray_switch: Switch,
     /// Selects how traffic is captured: System Proxy or TUN.
     pub connection_mode_row: ComboRow,
     /// TUN device parameters.
@@ -335,8 +336,18 @@ impl SettingsView {
         clear_row.add_prefix(&gtk4::Image::from_icon_name("system-shutdown-symbolic"));
         clear_row.add_suffix(&clear_on_exit);
 
+        let minimize_to_tray_switch = Switch::builder().active(true).valign(Align::Center).build();
+        let minimize_row = ActionRow::builder()
+            .title("Minimize to System Tray on Close")
+            .subtitle("Keep proxy running in the background when window is closed")
+            .activatable_widget(&minimize_to_tray_switch)
+            .build();
+        minimize_row.add_prefix(&gtk4::Image::from_icon_name("application-x-addon-symbolic"));
+        minimize_row.add_suffix(&minimize_to_tray_switch);
+
         sys_group.add(&auto_proxy_row);
         sys_group.add(&clear_row);
+        sys_group.add(&minimize_row);
 
         // 4. Appearance
         let theme_group = PreferencesGroup::builder()
@@ -722,6 +733,7 @@ impl SettingsView {
             http_port_entry,
             theme_row,
             auto_proxy_switch,
+            minimize_to_tray_switch,
             connection_mode_row,
             tun_stack_row,
             tun_mtu_entry,

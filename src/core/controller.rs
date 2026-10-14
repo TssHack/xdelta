@@ -8,6 +8,7 @@
 use crate::core::config::{generate_xray_config, write_config_to_temp_file};
 use crate::core::process::CoreProcessManager;
 use crate::core::session::{ConnectionMode, ConnectionProfile, ConnectionState};
+use crate::model::Node;
 use crate::net::stats::{TrafficCounters, TrafficRates, TrafficSampler};
 use crate::net::sysproxy::{GnomeProxyManager, ProxySnapshot};
 use crate::net::tun::{self, TunReadiness};
@@ -61,6 +62,7 @@ pub struct ConnectionController {
     last_health_check: Option<std::time::Instant>,
     sampler: TrafficSampler,
     config_path: Option<PathBuf>,
+    active_node: Option<Node>,
 }
 
 impl Default for ConnectionController {
@@ -76,6 +78,7 @@ impl ConnectionController {
             process: None,
             proxy_snapshot: None,
             active_mode: None,
+            active_node: None,
             api_port: crate::core::session::DEFAULT_API_PORT,
             socks_port: crate::core::session::DEFAULT_SOCKS_PORT,
             http_port: crate::core::session::DEFAULT_HTTP_PORT,
@@ -87,6 +90,10 @@ impl ConnectionController {
 
     pub fn state(&self) -> &ConnectionState {
         &self.state
+    }
+
+    pub fn active_node(&self) -> Option<&Node> {
+        self.active_node.as_ref()
     }
 
     pub fn active_mode(&self) -> Option<ConnectionMode> {
@@ -272,6 +279,7 @@ impl ConnectionController {
             profile.node.name,
             note.as_deref().unwrap_or("no note")
         );
+        self.active_node = Some(profile.node.clone());
 
         match note {
             Some(note) => TransitionOutcome::with_note(self.state.clone(), note),
@@ -321,6 +329,7 @@ impl ConnectionController {
 
         self.sampler.reset();
         self.active_mode = None;
+        self.active_node = None;
         self.state = ConnectionState::Disconnected;
 
         if problems.is_empty() {
@@ -483,6 +492,7 @@ impl ConnectionController {
             let _ = GnomeProxyManager::restore(&snapshot);
         }
         self.active_mode = None;
+        self.active_node = None;
         self.sampler.reset();
         self.state = ConnectionState::Failed("the proxy core stopped unexpectedly".to_string());
         TransitionOutcome::ok(self.state.clone())

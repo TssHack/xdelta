@@ -47,6 +47,7 @@ impl App {
             .build();
 
         app.connect_startup(|_| {
+            crate::core::CoreProcessManager::terminate_stale_cores();
             Self::load_css();
             Self::init_icon_theme();
             Self::apply_saved_appearance();

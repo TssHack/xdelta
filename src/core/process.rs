@@ -118,7 +118,54 @@ impl CoreProcessManager {
             .find(|dir| dir.join("geoip.dat").exists() || dir.join("geosite.dat").exists())
     }
 
+    /// Terminates any stale or orphaned core processes from previous sessions
+    /// and cleans up any lingering xdelta0 TUN interface.
+    pub fn terminate_stale_cores() {
+        #[cfg(target_os = "linux")]
+        {
+            let my_pid = std::process::id() as i32;
+            if let Ok(entries) = std::fs::read_dir("/proc") {
+                for entry in entries.flatten() {
+                    let Some(pid) = entry
+                        .file_name()
+                        .to_str()
+                        .and_then(|s| s.parse::<i32>().ok())
+                    else {
+                        continue;
+                    };
+
+                    if pid == my_pid {
+                        continue;
+                    }
+
+                    let is_xdelta_core = std::fs::read(format!("/proc/{pid}/cmdline"))
+                        .map(|raw| {
+                            let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+                            text.contains("xray")
+                                && (text.contains("xdelta_active.json")
+                                    || text.contains("xdelta_probe_"))
+                        })
+                        .unwrap_or(false);
+
+                    if is_xdelta_core {
+                        log::info!("terminating orphaned core process {pid}");
+                        unsafe {
+                            libc::kill(pid, libc::SIGKILL);
+                        }
+                    }
+                }
+            }
+
+            // Clean up any lingering xdelta0 interface
+            let _ = Command::new("ip")
+                .args(["link", "delete", "xdelta0"])
+                .output();
+        }
+    }
+
     pub fn start(config_path: &Path) -> Result<Self, String> {
+        Self::terminate_stale_cores();
+
         let binary_path = Self::find_xray_binary()?;
 
         log::info!(
@@ -131,6 +178,19 @@ impl CoreProcessManager {
         if let Some(asset_dir) = Self::find_asset_dir(&binary_path) {
             log::info!("setting XRAY_LOCATION_ASSET to {}", asset_dir.display());
             cmd.env("XRAY_LOCATION_ASSET", asset_dir);
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
         }
 
         let mut child = cmd

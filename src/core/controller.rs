@@ -124,6 +124,30 @@ impl ConnectionController {
                     return Err(format!("TUN unavailable: {}", readiness.message()));
                 }
             }
+            if std::net::TcpListener::bind(("127.0.0.1", profile.api_port)).is_err() {
+                CoreProcessManager::terminate_stale_cores();
+                if let Err(e) = std::net::TcpListener::bind(("127.0.0.1", profile.api_port)) {
+                    return Err(format!(
+                        "API port {} is already in use by another application: {e}",
+                        profile.api_port
+                    ));
+                }
+            }
+        } else {
+            for (label, port) in [
+                ("SOCKS", profile.socks_port),
+                ("HTTP", profile.http_port),
+                ("API", profile.api_port),
+            ] {
+                if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+                    CoreProcessManager::terminate_stale_cores();
+                    if let Err(e) = std::net::TcpListener::bind(("127.0.0.1", port)) {
+                        return Err(format!(
+                            "{label} port {port} is already in use by another application: {e}"
+                        ));
+                    }
+                }
+            }
         }
 
         let config = generate_xray_config(profile)?;

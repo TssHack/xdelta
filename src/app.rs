@@ -786,24 +786,31 @@ impl App {
             btn.set_sensitive(false);
             btn.set_label("Waiting for authentication...");
 
-            match tun::run_setup(&binary) {
-                Ok(()) => {
-                    log::info!("granted TUN capabilities to {}", binary.display());
+            let settings_c = settings_view_click.clone();
+            let ctl_c = controller_click.clone();
+            let btn_c = btn.clone();
+
+            glib::MainContext::default().spawn_local(async move {
+                let res = tokio::task::spawn_blocking(move || tun::run_setup(&binary)).await;
+
+                btn_c.set_label("Grant Permission");
+
+                match res {
+                    Ok(Ok(())) => {
+                        log::info!("one-time TUN authorization completed successfully");
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("TUN capability setup failed: {e}");
+                    }
+                    Err(e) => {
+                        log::warn!("TUN setup task failed: {e}");
+                    }
                 }
-                Err(e) => {
-                    log::warn!("TUN capability setup failed: {}", e);
-                }
-            }
 
-            btn.set_label("Grant Permission");
-
-            // Re-read the real state rather than assuming the grant worked.
-            let readiness = controller_click.borrow().tun_readiness();
-            settings_view_click.render_tun_status(&readiness);
-
-            if !readiness.is_ready() && readiness.is_fixable_by_setup() {
-                settings_view_click.render_tun_status(&TunReadiness::NeedsPrivileges { binary });
-            }
+                // Re-read the real state rather than assuming the grant worked.
+                let readiness = ctl_c.borrow().tun_readiness();
+                settings_c.render_tun_status(&readiness);
+            });
         });
     }
 

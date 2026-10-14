@@ -1,0 +1,68 @@
+#!/bin/bash
+set -e
+
+ACTION="$1"
+IFACE="${2:-xdelta0}"
+SERVER_HOST="$3"
+
+case "$ACTION" in
+    test)
+        exit 0
+        ;;
+    up)
+        # Wait up to 3 seconds for the TUN device to appear
+        for i in {1..30}; do
+            if ip link show dev "$IFACE" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 0.1
+        done
+
+        # 1. Assign IP address to TUN interface and bring it up
+        ip addr add 172.19.0.1/30 dev "$IFACE" 2>/dev/null || true
+        ip link set dev "$IFACE" up 2>/dev/null || true
+
+        # 2. Add direct host route to proxy server via default gateway to avoid routing loop
+        DEFAULT_ROUTE=$(ip -4 route show default 2>/dev/null | head -1)
+        GW=$(echo "$DEFAULT_ROUTE" | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}')
+        DEV=$(echo "$DEFAULT_ROUTE" | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')
+
+        SERVER_IP=""
+        if [ -n "$SERVER_HOST" ]; then
+            if [[ "$SERVER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SERVER_IP="$SERVER_HOST"
+            else
+                SERVER_IP=$(getent ahosts "$SERVER_HOST" 2>/dev/null | awk '{print $1}' | head -1 || true)
+            fi
+        fi
+
+        if [ -n "$SERVER_IP" ] && [ -n "$GW" ] && [ -n "$DEV" ]; then
+            ip route replace "$SERVER_IP/32" via "$GW" dev "$DEV" 2>/dev/null || true
+        fi
+
+        # 3. Default route through TUN using dual /1
+        ip route replace 0.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        ip route replace 128.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+
+        # 4. DNS configuration via systemd-resolved if available
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl dns "$IFACE" 1.1.1.1 8.8.8.8 2>/dev/null || true
+            resolvectl default-route "$IFACE" true 2>/dev/null || true
+        fi
+        ;;
+
+    down)
+        # Teardown routes and cleanup TUN interface
+        ip route del 0.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        ip route del 128.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl revert "$IFACE" 2>/dev/null || true
+        fi
+        ip link delete "$IFACE" 2>/dev/null || true
+        ;;
+
+    *)
+        echo "Usage: $0 {test|up|down} [interface] [server_host]" >&2
+        exit 1
+        ;;
+esac

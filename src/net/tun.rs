@@ -25,6 +25,14 @@ const TUN_DEVICE: &str = "/dev/net/tun";
 /// Capabilities the core needs to create and configure a TUN device.
 const REQUIRED_CAPABILITIES: &str = "cap_net_admin,cap_net_raw+ep";
 
+/// Standard persistent helper path for TUN route configuration.
+pub const HELPER_PATH: &str = "/usr/local/bin/xdelta-tun-helper";
+/// Polkit policy action allowing active desktop sessions to configure routes without password prompts.
+pub const POLKIT_POLICY_PATH: &str =
+    "/usr/share/polkit-1/actions/io.github.xdelta.tun-helper.policy";
+/// Sudoers drop-in allowing passwordless execution of the helper.
+pub const SUDOERS_PATH: &str = "/etc/sudoers.d/xdelta-tun";
+
 /// Why TUN mode is not usable, in a form the UI can explain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TunReadiness {
@@ -32,7 +40,7 @@ pub enum TunReadiness {
     Ready,
     /// The device node does not exist, so the kernel has no TUN support.
     Unsupported(String),
-    /// The binary exists but lacks the capabilities; setup is required.
+    /// The binary exists but lacks the capabilities or routing helper; setup is required.
     NeedsPrivileges { binary: PathBuf },
 }
 
@@ -52,7 +60,7 @@ impl TunReadiness {
             Self::Ready => "Ready".to_string(),
             Self::Unsupported(reason) => format!("Unavailable: {reason}"),
             Self::NeedsPrivileges { binary } => format!(
-                "One-time setup needed: grant {} permission to create the tunnel device",
+                "One-time setup needed: grant permissions for {} and routing helper",
                 binary.display()
             ),
         }
@@ -97,6 +105,28 @@ pub fn has_required_capabilities(reported: &str) -> bool {
     reported.contains("cap_net_admin") && reported.contains("cap_net_raw")
 }
 
+/// Returns true when the persistent TUN helper and permissions are installed and ready.
+pub fn is_helper_ready() -> bool {
+    let helper = Path::new(HELPER_PATH);
+    if !helper.exists() {
+        return false;
+    }
+    // Check if sudo -n test succeeds
+    if let Ok(out) = Command::new("sudo")
+        .args(["-n", HELPER_PATH, "test"])
+        .output()
+    {
+        if out.status.success() {
+            return true;
+        }
+    }
+    // Check if polkit policy exists
+    if Path::new(POLKIT_POLICY_PATH).exists() {
+        return true;
+    }
+    false
+}
+
 /// Determines whether TUN mode can be used with the given core binary.
 pub fn check_readiness(binary: &Path) -> TunReadiness {
     if let Err(reason) = kernel_supports_tun() {
@@ -107,12 +137,19 @@ pub fn check_readiness(binary: &Path) -> TunReadiness {
         return TunReadiness::Unsupported(format!("{} not found", binary.display()));
     }
 
-    match read_capabilities(binary) {
-        Ok(caps) if has_required_capabilities(&caps) => TunReadiness::Ready,
-        Ok(_) => TunReadiness::NeedsPrivileges {
+    let caps_ok = match read_capabilities(binary) {
+        Ok(caps) => has_required_capabilities(&caps),
+        Err(_) => false,
+    };
+
+    let helper_ok = is_helper_ready();
+
+    if caps_ok && helper_ok {
+        TunReadiness::Ready
+    } else {
+        TunReadiness::NeedsPrivileges {
             binary: binary.to_path_buf(),
-        },
-        Err(e) => TunReadiness::Unsupported(e),
+        }
     }
 }
 
@@ -134,45 +171,166 @@ pub fn setup_command_line(binary: &Path) -> String {
     format!("sudo setcap {} {}", REQUIRED_CAPABILITIES, binary.display())
 }
 
-/// Runs the capability setup through polkit.
+/// Runs the one-time capability and routing helper setup through polkit.
 ///
-/// This is the only privileged action the application performs, it happens once,
-/// and the user sees a desktop authentication prompt. It is never called
-/// implicitly: the UI requires an explicit click.
+/// This asks the user for authentication once. After this completes,
+/// route setup and teardown are completely passwordless and never prompt again.
 pub fn run_setup(binary: &Path) -> Result<(), String> {
-    let argv = setup_command(binary);
-    let (program, args) = argv.split_first().ok_or("empty setup command")?;
+    let script_content = format!(
+        r#"#!/bin/bash
+set -e
+XRAY_BIN="{bin_path}"
 
-    let output = Command::new(program)
-        .args(args)
+# 1. Grant Linux capabilities to the Xray binary
+if [ -n "$XRAY_BIN" ] && [ -f "$XRAY_BIN" ]; then
+    setcap cap_net_admin,cap_net_raw+ep "$XRAY_BIN"
+fi
+
+# 2. Install the persistent TUN routing helper
+mkdir -p /usr/local/bin
+cat << 'HELPER_EOF' > /usr/local/bin/xdelta-tun-helper
+#!/bin/bash
+set -e
+
+ACTION="$1"
+IFACE="${{2:-xdelta0}}"
+SERVER_HOST="$3"
+
+case "$ACTION" in
+    test)
+        exit 0
+        ;;
+    up)
+        for i in {{1..30}}; do
+            if ip link show dev "$IFACE" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 0.1
+        done
+
+        ip addr add 172.19.0.1/30 dev "$IFACE" 2>/dev/null || true
+        ip link set dev "$IFACE" up 2>/dev/null || true
+
+        DEFAULT_ROUTE=$(ip -4 route show default 2>/dev/null | head -1)
+        GW=$(echo "$DEFAULT_ROUTE" | awk '{{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}}')
+        DEV=$(echo "$DEFAULT_ROUTE" | awk '{{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}}')
+
+        SERVER_IP=""
+        if [ -n "$SERVER_HOST" ]; then
+            if [[ "$SERVER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SERVER_IP="$SERVER_HOST"
+            else
+                SERVER_IP=$(getent ahosts "$SERVER_HOST" 2>/dev/null | awk '{{print $1}}' | head -1 || true)
+            fi
+        fi
+
+        if [ -n "$SERVER_IP" ] && [ -n "$GW" ] && [ -n "$DEV" ]; then
+            ip route replace "$SERVER_IP/32" via "$GW" dev "$DEV" 2>/dev/null || true
+        fi
+
+        ip route replace 0.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        ip route replace 128.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl dns "$IFACE" 1.1.1.1 8.8.8.8 2>/dev/null || true
+            resolvectl default-route "$IFACE" true 2>/dev/null || true
+        fi
+        ;;
+
+    down)
+        ip route del 0.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        ip route del 128.0.0.0/1 dev "$IFACE" 2>/dev/null || true
+        if command -v resolvectl >/dev/null 2>&1; then
+            resolvectl revert "$IFACE" 2>/dev/null || true
+        fi
+        ip link delete "$IFACE" 2>/dev/null || true
+        ;;
+
+    *)
+        echo "Usage: $0 {{test|up|down}} [interface] [server_host]" >&2
+        exit 1
+        ;;
+esac
+HELPER_EOF
+
+chmod 755 /usr/local/bin/xdelta-tun-helper
+
+# 3. Allow passwordless execution via Sudoers drop-in
+mkdir -p /etc/sudoers.d
+cat << 'SUDO_EOF' > /etc/sudoers.d/xdelta-tun
+ALL ALL=(ALL) NOPASSWD: /usr/local/bin/xdelta-tun-helper
+SUDO_EOF
+chmod 440 /etc/sudoers.d/xdelta-tun
+
+# 4. Allow passwordless execution via PolicyKit
+mkdir -p /usr/share/polkit-1/actions
+cat << 'POLKIT_EOF' > /usr/share/polkit-1/actions/io.github.xdelta.tun-helper.policy
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
+"http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+  <vendor>xdelta</vendor>
+  <vendor_url>https://github.com/TssHack/xdelta</vendor_url>
+  <action id="io.github.xdelta.tun-helper">
+    <description>Run xdelta TUN routing helper</description>
+    <message>Authentication is required to configure xdelta network routing</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/xdelta-tun-helper</annotate>
+  </action>
+</policyconfig>
+POLKIT_EOF
+chmod 644 /usr/share/polkit-1/actions/io.github.xdelta.tun-helper.policy
+"#,
+        bin_path = binary.display()
+    );
+
+    let setup_script_path = std::env::temp_dir().join("xdelta_setup_tun.sh");
+    std::fs::write(&setup_script_path, script_content)
+        .map_err(|e| format!("Failed to create setup script: {e}"))?;
+
+    let output = Command::new("pkexec")
+        .args(["bash", setup_script_path.to_str().unwrap_or("")])
         .output()
-        .map_err(|e| format!("could not run {}: {}", program, e))?;
+        .map_err(|e| format!("could not run pkexec: {e}"))?;
+
+    let _ = std::fs::remove_file(setup_script_path);
 
     if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let detail = if stderr.trim().is_empty() {
-        stdout.trim().to_string()
+        Ok(())
     } else {
-        stderr.trim().to_string()
-    };
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
 
-    if detail.is_empty() {
-        Err("setup was cancelled or was not permitted".to_string())
-    } else {
-        Err(detail)
+        if detail.is_empty() {
+            Err("setup was cancelled or was not permitted".to_string())
+        } else {
+            Err(detail)
+        }
     }
 }
 
-/// Removes the capability grant, restoring the binary to its original state.
+/// Removes the capability grant and helper files, restoring the system.
 pub fn revert_setup(binary: &Path) -> Result<(), String> {
+    let script = format!(
+        "setcap -r {} 2>/dev/null || true; rm -f {} {} {} 2>/dev/null || true",
+        binary.display(),
+        HELPER_PATH,
+        SUDOERS_PATH,
+        POLKIT_POLICY_PATH
+    );
     let output = Command::new("pkexec")
-        .args(["setcap", "-r", &binary.display().to_string()])
+        .args(["bash", "-c", &script])
         .output()
-        .map_err(|e| format!("could not run setcap -r: {e}"))?;
+        .map_err(|e| format!("could not run pkexec: {e}"))?;
 
     if output.status.success() {
         Ok(())
@@ -183,54 +341,89 @@ pub fn revert_setup(binary: &Path) -> Result<(), String> {
 
 /// Applies system routing table rules to direct OS traffic into the TUN interface.
 pub fn apply_tun_routes(interface: &str, server_host: &str) -> Result<(), String> {
+    if Path::new(HELPER_PATH).exists() {
+        // 1. Try passwordless sudo -n first
+        if let Ok(out) = Command::new("sudo")
+            .args(["-n", HELPER_PATH, "up", interface, server_host])
+            .output()
+        {
+            if out.status.success() {
+                return Ok(());
+            }
+        }
+
+        // 2. Try pkexec (runs without prompt if polkit policy is present)
+        let output = Command::new("pkexec")
+            .args([HELPER_PATH, "up", interface, server_host])
+            .output()
+            .map_err(|e| format!("could not run pkexec: {e}"))?;
+
+        if output.status.success() {
+            return Ok(());
+        } else {
+            let err = String::from_utf8_lossy(&output.stderr);
+            if !err.trim().is_empty() {
+                return Err(format!("TUN routing error: {}", err.trim()));
+            }
+        }
+    }
+
+    // Local user script fallback
     let script_path = crate::core::persist::config_dir()
         .map(|d| d.join("tun-helper.sh"))
         .unwrap_or_else(|| PathBuf::from("/home/ehsan/.config/xdelta/tun-helper.sh"));
 
-    if !script_path.exists() {
-        return Err("tun-helper.sh not found".to_string());
+    if script_path.exists() {
+        let output = Command::new("pkexec")
+            .args([
+                script_path.to_str().unwrap_or(""),
+                "up",
+                interface,
+                server_host,
+            ])
+            .output()
+            .map_err(|e| format!("could not invoke tun helper: {e}"))?;
+
+        if output.status.success() {
+            return Ok(());
+        }
     }
 
-    let output = Command::new("pkexec")
-        .args([
-            script_path.to_str().unwrap_or(""),
-            "up",
-            interface,
-            server_host,
-        ])
-        .output()
-        .map_err(|e| format!("could not invoke tun helper: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let err = String::from_utf8_lossy(&output.stderr);
-        Err(if err.trim().is_empty() {
-            "permission denied or cancelled".to_string()
-        } else {
-            err.trim().to_string()
-        })
-    }
+    Err("One-time TUN setup needed. Please click 'Grant Permission' in Settings.".to_string())
 }
 
 /// Removes system routing rules installed for the TUN interface.
 pub fn revert_tun_routes(interface: &str, server_host: &str) -> Result<(), String> {
+    if Path::new(HELPER_PATH).exists() {
+        if let Ok(out) = Command::new("sudo")
+            .args(["-n", HELPER_PATH, "down", interface, server_host])
+            .output()
+        {
+            if out.status.success() {
+                return Ok(());
+            }
+        }
+
+        let _ = Command::new("pkexec")
+            .args([HELPER_PATH, "down", interface, server_host])
+            .spawn();
+        return Ok(());
+    }
+
     let script_path = crate::core::persist::config_dir()
         .map(|d| d.join("tun-helper.sh"))
         .unwrap_or_else(|| PathBuf::from("/home/ehsan/.config/xdelta/tun-helper.sh"));
 
-    if !script_path.exists() {
-        return Ok(());
+    if script_path.exists() {
+        let _ = Command::new("pkexec")
+            .args([
+                script_path.to_str().unwrap_or(""),
+                "down",
+                interface,
+                server_host,
+            ])
+            .spawn();
     }
-
-    let _ = Command::new("pkexec")
-        .args([
-            script_path.to_str().unwrap_or(""),
-            "down",
-            interface,
-            server_host,
-        ])
-        .output();
 
     Ok(())
 }

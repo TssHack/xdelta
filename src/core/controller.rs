@@ -177,6 +177,14 @@ impl ConnectionController {
                     ));
                 }
             }
+        } else if profile.mode == ConnectionMode::Tun {
+            // Apply TUN routes on the background worker thread so the GTK main loop never blocks
+            if let Err(e) = crate::net::tun::apply_tun_routes("xdelta0", &profile.node.server) {
+                log::warn!("Could not apply TUN system routes: {e}");
+                let _ = process.stop();
+                let _ = std::fs::remove_file(&path);
+                return Err(format!("TUN routing failed: {e}"));
+            }
         }
 
         Ok((process, path, latency))
@@ -476,18 +484,6 @@ impl ConnectionController {
         self.active_node = Some(profile.node.clone());
 
         let mut note = verified_latency.map(|l| format!("verified in {l} ms"));
-
-        // In TUN mode, install the system routes so traffic actually flows into xdelta0
-        if profile.mode == ConnectionMode::Tun {
-            if let Err(e) = crate::net::tun::apply_tun_routes("xdelta0", &profile.node.server) {
-                log::warn!("Could not apply TUN system routes: {e}");
-                let msg = format!("TUN routing: {e}");
-                note = Some(match note {
-                    Some(existing) => format!("{existing}; {msg}"),
-                    None => msg,
-                });
-            }
-        }
 
         // Apply desktop proxy whenever auto_system_proxy is enabled.
         if auto_system_proxy {

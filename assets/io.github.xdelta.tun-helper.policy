@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
+"http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+  <vendor>xdelta</vendor>
+  <vendor_url>https://github.com/TssHack/xdelta</vendor_url>
+  <action id="io.github.xdelta.tun-helper">
+    <description>Run xdelta TUN routing helper</description>
+    <message>Authentication is required to configure xdelta network routing</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/xdelta-tun-helper</annotate>
+  </action>
+</policyconfig>

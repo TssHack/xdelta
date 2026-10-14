@@ -150,6 +150,14 @@ cp -r "${PROJECT_ROOT}/assets/icons/hicolor" "${FHS_DIR}/usr/share/icons/"
 install -m 644 "${PROJECT_ROOT}/LICENSE" "${FHS_DIR}/usr/share/licenses/xdelta/LICENSE"
 install -m 644 "${PROJECT_ROOT}/README.md" "${FHS_DIR}/usr/share/doc/xdelta/README.md"
 
+# TUN routing helper and passwordless authorization rules
+mkdir -p "${FHS_DIR}/usr/local/bin"
+mkdir -p "${FHS_DIR}/usr/share/polkit-1/actions"
+mkdir -p "${FHS_DIR}/etc/sudoers.d"
+install -m 755 "${PROJECT_ROOT}/assets/xdelta-tun-helper" "${FHS_DIR}/usr/local/bin/xdelta-tun-helper"
+install -m 644 "${PROJECT_ROOT}/assets/io.github.xdelta.tun-helper.policy" "${FHS_DIR}/usr/share/polkit-1/actions/io.github.xdelta.tun-helper.policy"
+install -m 440 "${PROJECT_ROOT}/assets/xdelta-tun" "${FHS_DIR}/etc/sudoers.d/xdelta-tun"
+
 if [[ -f "${XRAY_STAGING}/xray" ]]; then
     mkdir -p "${FHS_DIR}/usr/lib/xdelta/bin"
     install -m 755 "${XRAY_STAGING}/xray" "${FHS_DIR}/usr/lib/xdelta/bin/xray"

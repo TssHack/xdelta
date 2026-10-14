@@ -80,7 +80,9 @@ jobs:
             tar \
             ruby \
             ruby-dev \
-            build-essential
+            build-essential \
+            unzip \
+            curl
 
       - name: Install fpm for RPM and DEB packaging
         run: |

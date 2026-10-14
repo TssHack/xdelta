@@ -42,21 +42,80 @@ pub struct CoreProcessManager {
 }
 
 impl CoreProcessManager {
+    /// Discovers the Xray executable by prioritizing bundled packages, local
+    /// user installations, and standard distribution paths.
     pub fn find_xray_binary() -> Result<PathBuf, String> {
-        let candidates = ["/usr/bin/xray", "/usr/local/bin/xray", "/opt/xray/xray"];
+        let mut candidates: Vec<PathBuf> = Vec::new();
 
-        for path in &candidates {
-            let p = PathBuf::from(path);
-            if p.exists() {
-                return Ok(p);
+        // 1. Next to the running xdelta executable (Portable, AppImage, or local cargo build)
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                candidates.push(parent.join("xray"));
+                candidates.push(parent.join("bin").join("xray"));
+                candidates.push(parent.join("../lib/xdelta/bin/xray"));
             }
         }
 
+        // 2. AppImage mount root
+        if let Ok(appdir) = std::env::var("APPDIR") {
+            let appdir_p = PathBuf::from(appdir);
+            candidates.push(appdir_p.join("usr/bin/xray"));
+            candidates.push(appdir_p.join("usr/lib/xdelta/bin/xray"));
+        }
+
+        // 3. Bundled distribution package paths (DEB, RPM, Arch pkg)
+        candidates.push(PathBuf::from("/usr/lib/xdelta/bin/xray"));
+        candidates.push(PathBuf::from("/usr/lib/xdelta/xray"));
+        candidates.push(PathBuf::from("/usr/libexec/xdelta/xray"));
+
+        // 4. User-local installations (~/.local/share/xdelta/bin/xray)
+        if let Some(user_bin) = crate::core::persist::user_bin_dir() {
+            candidates.push(user_bin.join("xray"));
+        }
+        if let Some(cfg_dir) = crate::core::persist::config_dir() {
+            candidates.push(cfg_dir.join("bin").join("xray"));
+        }
+
+        // 5. System-wide standard paths
+        candidates.push(PathBuf::from("/usr/bin/xdelta-xray"));
+        candidates.push(PathBuf::from("/usr/local/bin/xray"));
+        candidates.push(PathBuf::from("/usr/bin/xray"));
+        candidates.push(PathBuf::from("/opt/xray/xray"));
+
+        if let Some(p) = candidates.into_iter().find(|p| p.is_file()) {
+            return Ok(p);
+        }
+
+        // 6. Look in PATH
         if let Ok(path) = which::which("xray") {
             return Ok(path);
         }
 
-        Err("xray binary not found. Please install xray or verify PATH.".into())
+        Err("xray binary not found. Please bundle xray or download it from Settings.".into())
+    }
+
+    /// Discovers the directory containing geoip.dat and geosite.dat assets.
+    pub fn find_asset_dir(binary_path: &Path) -> Option<PathBuf> {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+
+        if let Some(parent) = binary_path.parent() {
+            candidates.push(parent.to_path_buf());
+        }
+
+        if let Ok(appdir) = std::env::var("APPDIR") {
+            candidates.push(PathBuf::from(appdir).join("usr/share/xdelta"));
+        }
+
+        candidates.push(PathBuf::from("/usr/share/xdelta"));
+        if let Some(user_assets) = crate::core::persist::user_assets_dir() {
+            candidates.push(user_assets);
+        }
+        candidates.push(PathBuf::from("/usr/share/xray"));
+        candidates.push(PathBuf::from("/usr/local/share/xray"));
+
+        candidates
+            .into_iter()
+            .find(|dir| dir.join("geoip.dat").exists() || dir.join("geosite.dat").exists())
     }
 
     pub fn start(config_path: &Path) -> Result<Self, String> {
@@ -68,7 +127,13 @@ impl CoreProcessManager {
             config_path.display()
         );
 
-        let mut child = Command::new(&binary_path)
+        let mut cmd = Command::new(&binary_path);
+        if let Some(asset_dir) = Self::find_asset_dir(&binary_path) {
+            log::info!("setting XRAY_LOCATION_ASSET to {}", asset_dir.display());
+            cmd.env("XRAY_LOCATION_ASSET", asset_dir);
+        }
+
+        let mut child = cmd
             .arg("run")
             .arg("-c")
             .arg(config_path)

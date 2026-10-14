@@ -24,6 +24,35 @@ pub fn config_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Directory holding application data, bundled assets, and user-managed binaries (~/.local/share/xdelta).
+pub fn data_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+
+    let dir = base.join("xdelta");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Could not create data directory {:?}: {}", dir, e);
+        return None;
+    }
+
+    Some(dir)
+}
+
+/// Directory for user-managed core binaries (~/.local/share/xdelta/bin).
+pub fn user_bin_dir() -> Option<PathBuf> {
+    let dir = data_dir()?.join("bin");
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir)
+}
+
+/// Directory for geo routing databases (~/.local/share/xdelta/assets).
+pub fn user_assets_dir() -> Option<PathBuf> {
+    let dir = data_dir()?.join("assets");
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir)
+}
+
 /// Path of the application's log file.
 pub fn log_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("xdelta.log"))

@@ -14,6 +14,17 @@ mkdir -p "${BIN_DIR}" "${APP_DIR}" "${ICON_DIR}"
 install -m 755 xdelta "${BIN_DIR}/xdelta"
 install -m 644 xdelta.desktop "${APP_DIR}/xdelta.desktop"
 
+# Install bundled Xray core and assets if present in package
+if [ -f "bin/xray" ]; then
+    mkdir -p "${PREFIX}/share/xdelta/bin" "${PREFIX}/share/xdelta"
+    install -m 755 "bin/xray" "${PREFIX}/share/xdelta/bin/xray"
+    for dat in bin/*.dat; do
+        if [ -f "$dat" ]; then
+            install -m 644 "$dat" "${PREFIX}/share/xdelta/"
+        fi
+    done
+fi
+
 if [ -d "assets/icons/hicolor" ]; then
     cp -rn assets/icons/hicolor/* "${ICON_DIR}/" || true
 fi

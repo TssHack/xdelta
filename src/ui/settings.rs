@@ -69,14 +69,83 @@ impl SettingsView {
             .build();
         core_row.add_prefix(&gtk4::Image::from_icon_name("utilities-terminal-symbolic"));
 
-        let binary_row = ActionRow::builder()
-            .title("Xray Binary Location")
-            .subtitle("/usr/bin/xray")
-            .build();
-        let binary_status_badge = Label::builder().label("Installed").build();
+        let binary_row = ActionRow::builder().title("Xray Core Engine").build();
+        binary_row.add_prefix(&gtk4::Image::from_icon_name(
+            "application-x-executable-symbolic",
+        ));
+
+        let binary_status_badge = Label::builder().build();
         binary_status_badge.add_css_class("badge-latency");
-        binary_status_badge.add_css_class("latency-good");
+
+        let download_core_btn = Button::builder()
+            .label("Download Core")
+            .valign(Align::Center)
+            .visible(false)
+            .build();
+        download_core_btn.add_css_class("suggested-action");
+
+        binary_row.add_suffix(&download_core_btn);
         binary_row.add_suffix(&binary_status_badge);
+
+        let refresh_core_row = {
+            let binary_row = binary_row.clone();
+            let badge = binary_status_badge.clone();
+            let btn = download_core_btn.clone();
+            std::rc::Rc::new(move || {
+                match crate::core::process::CoreProcessManager::find_xray_binary() {
+                    Ok(path) => {
+                        let path_str = path.to_string_lossy().to_string();
+                        let is_bundled = path_str.contains("/usr/lib/xdelta")
+                            || path_str.contains(".local/share/xdelta");
+                        binary_row.set_subtitle(&path_str);
+                        badge.set_label(if is_bundled { "Bundled" } else { "System" });
+                        badge.remove_css_class("latency-poor");
+                        badge.add_css_class("latency-good");
+                        btn.set_visible(false);
+                    }
+                    Err(_) => {
+                        binary_row
+                            .set_subtitle("Not found — click Download to install automatically");
+                        badge.set_label("Missing");
+                        badge.remove_css_class("latency-good");
+                        badge.add_css_class("latency-poor");
+                        btn.set_visible(true);
+                        btn.set_sensitive(true);
+                        btn.set_label("Download Core");
+                    }
+                }
+            })
+        };
+
+        refresh_core_row();
+
+        let refresh_clone = refresh_core_row.clone();
+        let btn_clone = download_core_btn.clone();
+        download_core_btn.connect_clicked(move |_| {
+            btn_clone.set_sensitive(false);
+            btn_clone.set_label("Downloading...");
+            let refresh_cb = refresh_clone.clone();
+            let btn_inner = btn_clone.clone();
+
+            glib::MainContext::default().spawn_local(async move {
+                let status_btn = btn_inner.clone();
+                let res = crate::core::downloader::download_and_install_xray(move |msg| {
+                    status_btn.set_label(msg);
+                })
+                .await;
+
+                match res {
+                    Ok(_) => {
+                        refresh_cb();
+                    }
+                    Err(e) => {
+                        log::error!("Core download error: {e}");
+                        btn_inner.set_sensitive(true);
+                        btn_inner.set_label("Retry Download");
+                    }
+                }
+            });
+        });
 
         core_group.add(&core_row);
         core_group.add(&binary_row);

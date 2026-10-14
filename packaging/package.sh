@@ -88,6 +88,53 @@ TMP_STAGING=$(mktemp -d "/tmp/xdelta_pkg_XXXXXX")
 trap 'rm -rf "${TMP_STAGING}"' EXIT
 
 # ------------------------------------------------------------------------------
+# 0. Fetch & Stage Xray Core & Assets for Out-of-the-Box Bundling
+# ------------------------------------------------------------------------------
+XRAY_STAGING="${TMP_STAGING}/xray_bin"
+mkdir -p "${XRAY_STAGING}"
+
+XRAY_ZIP_URL=""
+if [[ "${ARCH}" == "x86_64" ]]; then
+    XRAY_ZIP_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
+elif [[ "${ARCH}" == "aarch64" ]]; then
+    XRAY_ZIP_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip"
+fi
+
+XRAY_FOUND=false
+CACHE_ZIP="${PROJECT_ROOT}/target/Xray-linux-${ARCH}.zip"
+
+# 1. Check if cached zip exists
+if [[ -f "${CACHE_ZIP}" ]]; then
+    echo "==> Using cached Xray archive: ${CACHE_ZIP}"
+    if unzip -q -o "${CACHE_ZIP}" -d "${XRAY_STAGING}" 2>/dev/null; then
+        XRAY_FOUND=true
+    fi
+fi
+
+# 2. Try fetching from official GitHub Releases
+if [[ "${XRAY_FOUND}" != "true" ]] && [[ -n "${XRAY_ZIP_URL}" ]]; then
+    echo "==> Fetching official Xray-core release for ${ARCH}..."
+    if curl -fsSL -o "${TMP_STAGING}/xray.zip" "${XRAY_ZIP_URL}" 2>/dev/null; then
+        if unzip -q -o "${TMP_STAGING}/xray.zip" -d "${XRAY_STAGING}" 2>/dev/null; then
+            mkdir -p "${PROJECT_ROOT}/target"
+            cp "${TMP_STAGING}/xray.zip" "${CACHE_ZIP}" 2>/dev/null || true
+            XRAY_FOUND=true
+            echo "    -> Successfully downloaded & extracted Xray-core"
+        fi
+    fi
+fi
+
+# 3. Fallback: Copy from local host system if available
+if [[ "${XRAY_FOUND}" != "true" ]] && [[ -f "/usr/bin/xray" ]]; then
+    echo "==> Bundling host system /usr/bin/xray..."
+    cp "/usr/bin/xray" "${XRAY_STAGING}/xray"
+    if [[ -d "/usr/share/xray" ]]; then
+        cp /usr/share/xray/*.dat "${XRAY_STAGING}/" 2>/dev/null || true
+    fi
+    XRAY_FOUND=true
+fi
+
+# ------------------------------------------------------------------------------
 # 1. Prepare Standard FHS Directory Tree
 # ------------------------------------------------------------------------------
 FHS_DIR="${TMP_STAGING}/fhs"
@@ -103,6 +150,17 @@ cp -r "${PROJECT_ROOT}/assets/icons/hicolor" "${FHS_DIR}/usr/share/icons/"
 install -m 644 "${PROJECT_ROOT}/LICENSE" "${FHS_DIR}/usr/share/licenses/xdelta/LICENSE"
 install -m 644 "${PROJECT_ROOT}/README.md" "${FHS_DIR}/usr/share/doc/xdelta/README.md"
 
+if [[ -f "${XRAY_STAGING}/xray" ]]; then
+    mkdir -p "${FHS_DIR}/usr/lib/xdelta/bin"
+    install -m 755 "${XRAY_STAGING}/xray" "${FHS_DIR}/usr/lib/xdelta/bin/xray"
+    mkdir -p "${FHS_DIR}/usr/share/xdelta"
+    for dat in "${XRAY_STAGING}"/*.dat; do
+        if [[ -f "${dat}" ]]; then
+            install -m 644 "${dat}" "${FHS_DIR}/usr/share/xdelta/"
+        fi
+    done
+fi
+
 # ------------------------------------------------------------------------------
 # 2. Build Standalone Portable Tarball (.tar.gz)
 # ------------------------------------------------------------------------------
@@ -115,6 +173,16 @@ install -m 755 "${PROJECT_ROOT}/packaging/install.sh" "${TAR_DIR}/install.sh"
 install -m 644 "${PROJECT_ROOT}/LICENSE" "${TAR_DIR}/LICENSE"
 install -m 644 "${PROJECT_ROOT}/README.md" "${TAR_DIR}/README.md"
 cp -r "${PROJECT_ROOT}/assets/icons/hicolor" "${TAR_DIR}/assets/icons/"
+
+if [[ -f "${XRAY_STAGING}/xray" ]]; then
+    mkdir -p "${TAR_DIR}/bin"
+    install -m 755 "${XRAY_STAGING}/xray" "${TAR_DIR}/bin/xray"
+    for dat in "${XRAY_STAGING}"/*.dat; do
+        if [[ -f "${dat}" ]]; then
+            install -m 644 "${dat}" "${TAR_DIR}/bin/"
+        fi
+    done
+fi
 
 tar -czf "${DIST_DIR}/xdelta-${VERSION}-linux-${ARCH}.tar.gz" -C "${TMP_STAGING}" "xdelta-${VERSION}-linux-${ARCH}"
 echo "    -> Created: ${DIST_DIR}/xdelta-${VERSION}-linux-${ARCH}.tar.gz"
@@ -186,6 +254,14 @@ elif command -v rpmbuild >/dev/null 2>&1; then
     RPM_TOP="${TMP_STAGING}/rpmbuild"
     mkdir -p "${RPM_TOP}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
     
+    RPM_EXTRA_FILES=""
+    if [[ -d "${FHS_DIR}/usr/lib/xdelta" ]]; then
+        RPM_EXTRA_FILES+=$'/usr/lib/xdelta\n'
+    fi
+    if [[ -d "${FHS_DIR}/usr/share/xdelta" ]]; then
+        RPM_EXTRA_FILES+=$'/usr/share/xdelta\n'
+    fi
+
     cat <<EOF > "${RPM_TOP}/SPECS/xdelta.spec"
 Name:           xdelta
 Version:        ${VERSION}
@@ -211,6 +287,7 @@ cp -r ${FHS_DIR}/* \$RPM_BUILD_ROOT/
 /usr/share/icons/hicolor/*
 /usr/share/licenses/xdelta/LICENSE
 /usr/share/doc/xdelta/README.md
+${RPM_EXTRA_FILES}
 
 %changelog
 * Tue Oct 13 2026 TssHack <info@github.com/TssHack> - ${VERSION}-1
@@ -264,6 +341,9 @@ echo "==> Building AppImage..."
 APPDIR="${TMP_STAGING}/AppDir"
 mkdir -p "${APPDIR}"
 cp -r "${FHS_DIR}/usr" "${APPDIR}/"
+if [[ -f "${XRAY_STAGING}/xray" ]]; then
+    install -m 755 "${XRAY_STAGING}/xray" "${APPDIR}/usr/bin/xray"
+fi
 install -m 755 "${PROJECT_ROOT}/packaging/appimage/AppRun" "${APPDIR}/AppRun"
 install -m 644 "${PROJECT_ROOT}/assets/xdelta.desktop" "${APPDIR}/xdelta.desktop"
 install -m 644 "${PROJECT_ROOT}/assets/icons/hicolor/scalable/apps/xdelta-app.svg" "${APPDIR}/xdelta-app.svg"

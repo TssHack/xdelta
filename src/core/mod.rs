@@ -1,5 +1,6 @@
 pub mod config;
 pub mod controller;
+pub mod downloader;
 pub mod persist;
 pub mod process;
 pub mod session;
@@ -7,6 +8,7 @@ pub mod subscription_cache;
 
 pub use config::{generate_xray_config, write_config_to_temp_file};
 pub use controller::{ConnectionController, TransitionOutcome};
+pub use downloader::download_and_install_xray;
 pub use persist::AppearanceSettings;
 pub use process::CoreProcessManager;
 pub use session::{

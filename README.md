@@ -121,17 +121,27 @@ xdelta parses standard URI strings, Base64 subscription lists, and Clash/Meta co
 
 ## 🚀 Installation & Quick Start
 
-### 📦 Pre-built Packages (x86_64 & aarch64)
+### 📦 Pre-built Packages (Zero-Prerequisite Setup)
+
+> **No external dependencies required:** All official distribution packages come **pre-bundled with Xray-core and GeoIP/GeoSite routing databases**. You do **not** need to install `xray` from AUR or external repositories; simply install the package and launch **xdelta**.
 
 Download the latest release package for your distribution from the [GitHub Releases](https://github.com/TssHack/xdelta/releases) page:
 
-| Distribution / Format | Package Type | Architecture | Installation Command |
-| :--- | :---: | :---: | :--- |
-| **Debian / Ubuntu / Pop!_OS** | `.deb` | `amd64` / `arm64` | `sudo apt install ./xdelta_*.deb` |
-| **Arch Linux / CachyOS / Manjaro** | `.pkg.tar.zst` | `x86_64` / `aarch64` | `sudo pacman -U ./xdelta-*.pkg.tar.zst` |
-| **Fedora / RHEL / openSUSE** | `.rpm` | `x86_64` / `aarch64` | `sudo dnf install ./xdelta-*.rpm` |
-| **Universal Linux** | `.AppImage` | `x86_64` / `aarch64` | `chmod +x xdelta-*.AppImage && ./xdelta-*.AppImage` |
-| **Standalone Portable** | `.tar.gz` | `x86_64` / `aarch64` | `tar -xzf xdelta-*.tar.gz && ./install.sh` |
+| Distribution / Format | Package Type | Architecture | Installation Command | Core Engine |
+| :--- | :---: | :---: | :--- | :---: |
+| **Arch Linux / CachyOS / Manjaro** | `.pkg.tar.zst` | `x86_64` | `sudo pacman -U ./xdelta-*.pkg.tar.zst` | **Pre-bundled** |
+| **Debian / Ubuntu / Pop!_OS** | `.deb` | `amd64` | `sudo apt install ./xdelta_*.deb` | **Pre-bundled** |
+| **Fedora / RHEL / openSUSE** | `.rpm` | `x86_64` | `sudo dnf install ./xdelta-*.rpm` | **Pre-bundled** |
+| **Universal Linux** | `.AppImage` | `x86_64` | `chmod +x xdelta-*.AppImage && ./xdelta-*.AppImage` | **Pre-bundled** |
+| **Standalone Portable** | `.tar.gz` | `x86_64` | `tar -xzf xdelta-*.tar.gz && ./install.sh` | **Pre-bundled** |
+
+---
+
+### 📥 Built-in Core Downloader & Auto-Setup
+
+If building from source on a machine without a system-wide Xray installation:
+- **Automatic Discovery:** xdelta searches bundled paths (`/usr/lib/xdelta/bin/`), portable directories, user data (`~/.local/share/xdelta/bin/`), and system `PATH`.
+- **One-Click In-App Downloader:** Navigate to **Settings → Core Engine**; if the core is missing, click **"Download Core"** to automatically fetch and configure the latest official Xray binary and routing assets directly from XTLS releases.
 
 ---
 
@@ -143,12 +153,12 @@ Ensure the Rust toolchain and GTK4/Libadwaita headers are installed:
 
 #### Arch Linux / CachyOS / Manjaro
 ```bash
-sudo pacman -S base-devel rust cargo gtk4 libadwaita xray sing-box
+sudo pacman -S base-devel rust cargo gtk4 libadwaita
 ```
 
 #### Fedora / RHEL
 ```bash
-sudo dnf install rust cargo gcc gtk4-devel libadwaita-devel xray sing-box
+sudo dnf install rust cargo gcc gtk4-devel libadwaita-devel
 ```
 
 #### Ubuntu 24.04+ / Debian 13+

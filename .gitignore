@@ -9,5 +9,6 @@ examples/
 .*
 !.github
 !.gitignore
-web/
+web/node_modules/
+web/.next/
 design-system/

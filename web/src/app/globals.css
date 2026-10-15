@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   MATERIAL DESIGN 3 (MATERIAL YOU) DESIGN SYSTEM
+   Dynamic Color Scheme derived from the wallpaper image:
+   Seed: #38b6ff (Cyan) + #f6af34 (Star Gold) + #081018 (Deep Midnight Blue)
+   ============================================================================ */
+
+:root {
+  /* MD3 Color Tokens - Dark Scheme (Personal & Dynamic) */
+  --md-sys-color-primary: #7ee5ff;
+  --md-sys-color-on-primary: #003642;
+  --md-sys-color-primary-container: #004e5f;
+  --md-sys-color-on-primary-container: #b8eeff;
+
+  --md-sys-color-secondary: #38b6ff;
+  --md-sys-color-on-secondary: #00344f;
+  --md-sys-color-secondary-container: #004b70;
+  --md-sys-color-on-secondary-container: #cbe6ff;
+
+  --md-sys-color-tertiary: #f6af34;
+  --md-sys-color-on-tertiary: #452b00;
+  --md-sys-color-tertiary-container: #633f00;
+  --md-sys-color-on-tertiary-container: #ffddb3;
+
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffdad6;
+
+  --md-sys-color-surface: #081018;
+  --md-sys-color-on-surface: #e1e2e8;
+  --md-sys-color-on-surface-variant: #c1c7ce;
+
+  --md-sys-color-surface-container-lowest: #050a10;
+  --md-sys-color-surface-container-low: #0c151f;
+  --md-sys-color-surface-container: #101a26;
+  --md-sys-color-surface-container-high: #162230;
+  --md-sys-color-surface-container-highest: #1c293a;
+
+  --md-sys-color-outline: rgba(126, 229, 255, 0.28);
+  --md-sys-color-outline-variant: rgba(126, 229, 255, 0.12);
+
+  --md-sys-color-inverse-surface: #e1e2e8;
+  --md-sys-color-inverse-on-surface: #101a26;
+  --md-sys-color-inverse-primary: #00677d;
+
+  /* MD3 Shape Tokens */
+  --md-sys-shape-corner-none: 0px;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 9999px;
+
+  /* MD3 Motion Easing */
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md-sys-motion-duration-medium: 300ms;
+}
+
+body {
+  background-color: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Wallpaper Atmospheric Scrim (MD3 Surface Blend) */
+.md3-wallpaper-scrim {
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 16, 24, 0.72) 0%,
+    rgba(8, 16, 24, 0.84) 40%,
+    rgba(5, 10, 16, 0.95) 80%,
+    #050a10 100%
+  );
+}
+
+/* Ambient Bloom based on artwork's upper-left rim highlight */
+.md3-ambient-bloom {
+  background: radial-gradient(
+    circle at 18% 12%,
+    rgba(126, 229, 255, 0.16) 0%,
+    rgba(56, 182, 255, 0.08) 35%,
+    transparent 65%
+  );
+}
+
+.md3-star-bloom {
+  background: radial-gradient(
+    circle at 82% 25%,
+    rgba(246, 175, 52, 0.10) 0%,
+    transparent 50%
+  );
+}
+
+/* ============================================================================
+   MD3 COMPONENT STYLES
+   ============================================================================ */
+
+/* MD3 Surface Containers with Tonal Elevation */
+.md3-surface-low {
+  background-color: rgba(12, 21, 31, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.md3-surface-container {
+  background-color: rgba(16, 26, 38, 0.78);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.md3-surface-high {
+  background-color: rgba(22, 34, 48, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--md-sys-color-outline);
+}
+
+/* MD3 Directional Rim Highlight (from wallpaper lighting vector) */
+.md3-rim-light {
+  border-top: 1px solid rgba(126, 229, 255, 0.35);
+  border-left: 1px solid rgba(126, 229, 255, 0.2);
+}
+
+/* MD3 Interactive State Layers (Hover 8%, Focus 10%, Pressed 12%) */
+.md3-state-layer {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s var(--md-sys-motion-easing-emphasized);
+}
+
+.md3-state-layer:hover {
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -2px rgba(56, 182, 255, 0.18);
+  border-color: var(--md-sys-color-primary);
+}
+
+/* MD3 Glow Badges & Accents */
+.md3-glow-primary {
+  box-shadow: 0 0 35px -5px rgba(126, 229, 255, 0.3);
+}
+
+.md3-glow-tertiary {
+  box-shadow: 0 0 25px -4px rgba(246, 175, 52, 0.4);
+}
+
+/* Star Sparkle Pulse Animation (Inspired by the eye's golden star reflection) */
+@keyframes md3StarGlow {
+  0%, 100% {
+    opacity: 0.9;
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px rgba(246, 175, 52, 0.4));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 14px rgba(246, 175, 52, 0.8));
+  }
+}
+
+.md3-star-glow {
+  animation: md3StarGlow 2.8s ease-in-out infinite;
+}

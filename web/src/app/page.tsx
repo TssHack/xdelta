@@ -834,6 +834,22 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* 
+        ========================================================================
+        9. MD3 EXTENDED FLOATING ACTION BUTTON (FAB)
+        ========================================================================
+      */}
+      <aside className="fixed bottom-6 right-6 z-40">
+        <a
+          href="#downloads"
+          aria-label="Download xdelta Linux packages"
+          className="inline-flex items-center gap-2.5 px-5 py-3 rounded-full bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] border border-[var(--md-sys-color-primary)]/40 shadow-2xl md3-glow-primary hover:brightness-110 active:scale-95 transition-all duration-200 font-bold text-xs backdrop-blur-md"
+        >
+          <Download className="w-4 h-4 text-[var(--md-sys-color-primary)]" />
+          <span>Download v0.1.0</span>
+        </a>
+      </aside>
     </div>
   );
 }
